@@ -33,11 +33,11 @@ fi
 
 # Pull / build images
 echo -e "\n${CYAN}→ Building images...${NC}"
-docker compose build --quiet
+docker compose build
 
 # Start infrastructure first
 echo -e "${CYAN}→ Starting infrastructure (postgres, redis, minio)...${NC}"
-docker compose up -d postgres redis minio
+docker compose up -d postgres redis minio minio-setup
 echo -e "${CYAN}  Waiting for postgres healthcheck...${NC}"
 docker compose wait postgres
 
