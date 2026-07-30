@@ -39,9 +39,11 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - API_URL=http://api-gateway:8000
       - API_TOKEN=${EDGE_API_TOKEN}
+      - CAMERA_BUFFER_DIR=/capture-buffer
+    volumes:
+      - capture-buffer:/capture-buffer
     depends_on:
-      - detection-engine
-      - camera-controller
+      - redis
     restart: unless-stopped
 
   # ─────────────────────────────────────────────
@@ -107,6 +109,8 @@ services:
   # ─────────────────────────────────────────────
   postgres:
     image: pgvector/pgvector:pg16
+    ports:
+      - "5433:5432"
     environment:
       POSTGRES_DB: rec
       POSTGRES_USER: rec

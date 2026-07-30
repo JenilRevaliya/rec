@@ -91,8 +91,8 @@
       "dependencies": [],
       "attempts": 0,
       "failureReasons": [],
-      "passes": false,
-      "sessionCompleted": null
+      "passes": true,
+      "sessionCompleted": "2026-07-30T08:59:08.110Z"
     },
     {
       "id": 7,
@@ -120,8 +120,8 @@
       "dependencies": [],
       "attempts": 0,
       "failureReasons": [],
-      "passes": false,
-      "sessionCompleted": null
+      "passes": true,
+      "sessionCompleted": "2026-07-30T08:59:14.323Z"
     },
     {
       "id": 9,
@@ -135,8 +135,8 @@
       "dependencies": [],
       "attempts": 0,
       "failureReasons": [],
-      "passes": false,
-      "sessionCompleted": null
+      "passes": true,
+      "sessionCompleted": "2026-07-30T08:59:20.344Z"
     },
     {
       "id": 10,

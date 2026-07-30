@@ -1234,7 +1234,44 @@ To prevent users from uploading photos of others:
 - **Active liveness (optional):** Request user to blink or turn head during selfie capture
 - **Metadata check:** Verify selfie EXIF indicates front-facing camera, recent timestamp
 
+### 5.11 Photographer Edge Dashboard (Local App Interface)
+
+#### 5.11.1 Purpose
+Provides photographers with a local, zero-latency interface running directly on their edge laptop. It orchestrates camera connection, real-time curation, and cloud sync policies before processing starts.
+
+#### 5.11.2 Authentication & Boot Flow
+1. **Local App Launch:** The photographer opens the REC app on their laptop. The app launches a local Python server (Edge Node) and automatically opens a `localhost` dashboard in the default browser.
+2. **Hardened Login:** The dashboard presents a login screen. Credentials are encrypted and sent to the Auth DB (Cloud).
+3. **Execution Gate:** **Only** upon successful authentication will the underlying Python capture and tracking scripts be permitted to execute. Unauthorized access keeps the hardware orchestration layer disabled.
+
+#### 5.11.3 Dashboard Capabilities
+- **Camera Mount & Connect:** UI prompts to select the detected USB camera. Once selected, the UI instructs the user to mount the camera on the tripod.
+- **Live Feed Grid:** The dashboard displays a low-latency live video feed from the connected camera.
+- **Real-time Capture Grid:** Directly beneath the live feed, automatically captured photos appear in a real-time grid.
+- **Manual Curation:** Photographers can discard bad photos or manually keep good ones via the grid interface before they are permanently stored/synced.
+- **Cloud Upload Toggle:**
+  - **Toggled ON (Real-Time Mode):** Captured photos are immediately uploaded to the cloud under the photographer's account. Face processing and embedding extraction start instantly.
+  - **Toggled OFF (Local-Only Mode):** Photos are stored locally on the laptop's SSD with zero data loss. The photographer can upload the bulk batch later (e.g., when reaching a better WiFi connection).
+
+### 5.12 Event Sharing & Access Control
+
+#### 5.12.1 Purpose
+Governs how attendees access the user portal to scan their faces and retrieve their photos, providing strict privacy options for the photographer/event organizer.
+
+#### 5.12.2 Sharing Modes
+| Mode | Description |
+|---|---|
+| **Option 1: Private (Link-Only)** | Strict privacy. **Only** users who possess a specific, unique event link can access the portal, scan their face, and retrieve photos. Without the link, the event is completely invisible, even if a user's face was detected. |
+| **Option 2: Public (Open Access)** | Open discovery. The event is visible on the main portal. Anyone whose face was detected during the event can find their photos simply by taking a selfie on the public platform. |
+
+#### 5.12.3 Unique Link Generation & Constraints
+When **Private Mode** is selected, the system generates secure, embedded links with strict usage controls:
+- **Unique Tokens:** Each generated link contains a cryptographic token bound to that specific share.
+- **Bulk Generation:** Photographers can generate bulk unique links (e.g., 500 links for 500 VIP attendees) via the admin dashboard.
+- **Usage Limits:** Each link can be configured with a "Maximum Opens" or "Maximum Users" limit (e.g., a family link that expires after 5 different devices open it).
+
 ---
+
 
 ## 6. Tech Stack
 
@@ -1313,52 +1350,301 @@ To prevent users from uploading photos of others:
 
 ## 7. Photography Intelligence Rules
 
-### 7.1 Camera Settings Decision Tree
+> **Research-backed autonomous capture intelligence.** This section defines the complete decision-making framework for when, how, and whom to photograph. Every rule is derived from professional photography principles, computer vision research, and anti-redundancy algorithms.
+
+### 7.1 The Engagement Score Model (Shutter Timing Intelligence)
+
+REC does NOT fire the shutter the instant a person is detected. It continuously computes a real-time **Engagement Score (0.0-1.0)** from multiple facial and body signals, and only triggers when the score sustains above threshold:
+
+| Signal | Weight | Detection Method | Threshold |
+|---|---|---|---|
+| **Smile Intensity** | 0.25 | Facial landmark mouth-corner distance ratio | > 0.6 |
+| **Gaze Direction** | 0.20 | Eye landmark pupil-to-corner ratio (mutual gaze) | Within 15 deg of camera |
+| **Eyes Open** | 0.20 | Eye Aspect Ratio (EAR) from 68-point landmarks | EAR > 0.21 |
+| **Motion Stability** | 0.15 | Centroid velocity < 15px/frame for 5+ frames | Velocity < threshold |
+| **Face Pose Quality** | 0.10 | Yaw < 45 deg, Pitch within [-30, 30] | Within bounds |
+| **Body Openness** | 0.10 | Torso facing camera (bbox aspect check) | Aspect 0.3-0.7 |
+
+**Trigger Rule:** `engagement_score >= 0.55` sustained for `MIN_SUSTAIN_FRAMES = 3` consecutive frames (~200ms at 15 FPS). This prevents capturing grimaces, blinks, and mid-motion blur.
+
+### 7.2 Optimal Face Angles (Yaw/Pitch/Roll)
+
+The **three-quarter view (30-45 degree yaw)** is universally the most flattering portrait angle. REC uses InsightFace's landmark model to compute head orientation in 3D and enforces angle quality:
+
+| Angle | Optimal Range | Capture Gate | Rationale |
+|---|---|---|---|
+| **Yaw** (left/right) | 0-45 deg | Block if > 45 deg | Beyond 45 deg = unreliable face embeddings + unflattering profile |
+| **Pitch** (up/down) | -10 to +15 deg | Block if outside [-30, 30] | Slight downward chin tilt is most flattering (research-backed) |
+| **Roll** (head tilt) | -15 to +15 deg | Warn if > 15 deg | Subtle tilt adds personality; extreme tilt = awkward |
+
+### 7.3 Anti-Monotony Angle Rotation System
+
+To prevent every photo of the same person being identical, REC tracks `last_capture_angles` per PID and enforces variety:
+
+```python
+ANGLE_CATEGORIES = [
+    "frontal",              # 0-15 deg yaw
+    "three_quarter_left",   # 15-45 deg yaw left
+    "three_quarter_right",  # 15-45 deg yaw right
+    "elevated",             # Camera above subject
+    "candid_behind",        # Subject not facing camera (interaction shots)
+]
+# Priority: angles NOT yet captured for this PID get 1.3x boost
+```
+
+### 7.4 Camera Settings Decision Tree
 
 ```
 IF scene == INDOOR:
-    IF lighting == WELL_LIT:
-        ISO = 400, Shutter = 1/125s
-    ELIF lighting == DIM:
-        ISO = 1600, Shutter = 1/80s
-    ELIF lighting == DARK:
-        ISO = 3200, Shutter = 1/60s, Flash = FILL
+    IF lighting == WELL_LIT:     ISO = 400,  Shutter = 1/125s
+    ELIF lighting == DIM:        ISO = 1600, Shutter = 1/80s
+    ELIF lighting == DARK:       ISO = 3200, Shutter = 1/60s, Flash = FILL
 ELIF scene == OUTDOOR:
-    IF lighting == BRIGHT_SUN:
-        ISO = 100, Shutter = 1/500s
-    ELIF lighting == OVERCAST:
-        ISO = 200, Shutter = 1/250s
-    ELIF lighting == GOLDEN_HOUR:
-        ISO = 200, Shutter = 1/160s
+    IF lighting == BRIGHT_SUN:   ISO = 100,  Shutter = 1/500s
+    ELIF lighting == OVERCAST:   ISO = 200,  Shutter = 1/250s
+    ELIF lighting == GOLDEN_HOUR:ISO = 200,  Shutter = 1/160s
 
-# Aperture determined by capture mode (see 5.3.4)
-# White balance: AWB or venue-calibrated preset
+# Reciprocal Rule: min_shutter = 1/focal_length (e.g., 85mm -> 1/100s)
+# Aperture determined by capture mode (see 7.5)
 ```
 
-### 7.2 Portrait Photography Rules Matrix
+### 7.5 Portrait Photography Rules Matrix
 
-| Rule | Solo | Duo | Group | Candid |
+| Rule | Solo | Duo | Group (4+) | Candid |
 |---|---|---|---|---|
 | **Aperture** | f/1.8-2.8 | f/3.5-4.0 | f/5.6-11 | f/2.8-4.0 |
 | **Focus Point** | Nearest eye | Center-weighted | Wide zone | Nearest subject |
 | **Min Shutter** | 1/125s | 1/125s | 1/125s | 1/250s |
-| **Framing** | Rule of thirds | Symmetric balance | All faces visible | Natural, off-center |
-| **Headroom** | 10-20% | 10-15% | 5-10% | Variable |
+| **Framing** | Rule of Thirds | Symmetric balance | All faces visible | Off-center, natural |
+| **Headroom** | 10-20% | 10-15% | 5-8% | Variable |
 | **Eye Position** | Upper third | Upper third | Upper half | Any |
 | **DOF Priority** | Shallow (isolation) | Moderate | Deep (all sharp) | Shallow (subject pop) |
-| **Crop Danger Zones** | Never at joints | Never at joints | Waist-up preferred | Any natural |
+| **Crop Danger** | Never at joints | Never at joints | Waist-up preferred | Any natural |
+| **Composition** | Golden Ratio/Thirds | Center symmetric | Triangle/Pyramid stagger | Lead-room in gaze dir |
 
-### 7.3 Exposure Compensation Rules
+### 7.6 Group Photography Composition Rules
+
+| Group Size | Arrangement | Spacing | Aperture | Key Rule |
+|---|---|---|---|---|
+| **Duo (2)** | Side-by-side or angled | Shoulder-to-shoulder | f/3.5-4.0 | Both faces in upper third, symmetric |
+| **Trio (3)** | Triangular (1 high + 2 low) | Staggered heights | f/5.6 | Triangle center at frame center |
+| **Small (4-6)** | Two-row stagger | Tight, no gaps | f/8.0 | Back row between front row shoulders |
+| **Large (7+)** | Multi-row height stagger, slight arc | Very tight | f/8-11 | Arc formation keeps all faces equidistant from lens |
+
+### 7.7 Dynamic Cooldown System (Fail-Safe, Anti-Deadlock)
+
+> **CRITICAL DESIGN PRINCIPLE:** The system must NEVER enter a state where zero captures happen (deadlock), and must NEVER enter a state where it constantly fires the same type of shot (spam). The cooldown is fully dynamic and self-correcting.
+
+#### 7.7.1 Per-PID Adaptive Cooldown (Escalating + Decaying)
+
+```python
+# === HARDCODED CONSTANTS (DO NOT DERIVE, DO NOT MAKE CONFIGURABLE) ===
+COOLDOWN_MIN_SEC         = 5.0     # Absolute floor: never cool down less than 5s
+COOLDOWN_BASE_SEC        = 12.0    # Starting cooldown for a fresh PID
+COOLDOWN_MAX_SEC         = 120.0   # Absolute ceiling: never cool down more than 2 min
+ESCALATION_PER_CAPTURE   = 0.3     # Each capture adds 30% to cooldown
+DECAY_RATE_PER_SEC       = 0.02    # Cooldown shrinks 2% per second of inactivity
+GLOBAL_MIN_INTERVAL_SEC  = 2.0     # Minimum between ANY two captures (any PID)
+GLOBAL_MAX_IDLE_SEC      = 30.0    # If no capture for 30s, force emergency override
+
+def compute_cooldown(pid_state):
+    """Dynamic cooldown that escalates on spam and decays on inactivity."""
+    base = COOLDOWN_BASE_SEC
+    
+    # Escalate: more captures = longer wait
+    escalated = base * (1.0 + ESCALATION_PER_CAPTURE * pid_state.capture_count)
+    
+    # Decay: if not seen for a while, cooldown shrinks (person left and came back)
+    idle_time = now() - pid_state.last_seen_time
+    decay_factor = max(0.3, 1.0 - DECAY_RATE_PER_SEC * idle_time)
+    adjusted = escalated * decay_factor
+    
+    # Clamp to hard bounds
+    return clamp(adjusted, COOLDOWN_MIN_SEC, COOLDOWN_MAX_SEC)
+```
+
+#### 7.7.2 Anti-Deadlock: The Emergency Override System
+
+The system has **3 independent fail-safes** to guarantee it NEVER stops capturing:
+
+```python
+# === FAIL-SAFE 1: Global Idle Watchdog ===
+# If no capture has happened for GLOBAL_MAX_IDLE_SEC (30s),
+# ALL cooldowns are halved and engagement threshold drops to 0.35.
+# This prevents the system from going silent in a crowded room.
+
+if (now() - last_global_capture_time) > GLOBAL_MAX_IDLE_SEC:
+    for pid in all_pids:
+        pid.current_cooldown *= 0.5  # Halve all cooldowns
+    engagement_threshold = 0.35       # Drop from 0.55 to 0.35 (much easier to trigger)
+    log("WATCHDOG: Emergency cooldown halving + threshold drop")
+
+# === FAIL-SAFE 2: Starvation Detector ===
+# If a specific PID has been visible for 60+ seconds with 0 captures,
+# that PID gets INSTANT capture permission (cooldown = 0, threshold = 0.30).
+
+if pid_state.visible_duration > 60.0 and pid_state.capture_count == 0:
+    pid_state.current_cooldown = 0
+    pid_state.engagement_override = 0.30
+    log(f"STARVATION: PID {pid} force-unlocked after 60s with 0 captures")
+
+# === FAIL-SAFE 3: Heartbeat Capture ===
+# If NOTHING has been captured for 45 seconds despite people being visible,
+# the system forcibly captures the highest-priority visible PID regardless
+# of ALL other rules (cooldown, engagement, angle). Pure safety net.
+
+HEARTBEAT_FORCE_SEC = 45.0
+
+if (now() - last_global_capture_time) > HEARTBEAT_FORCE_SEC and visible_count > 0:
+    best_pid = priority_queue[0]  # Highest priority PID
+    force_capture(best_pid)       # Bypass ALL gates
+    log(f"HEARTBEAT: Force-captured PID {best_pid} to prevent deadlock")
+```
+
+#### 7.7.3 Anti-Spam: Similarity Suppression
+
+Prevents constant similar captures even when cooldown allows:
+
+```python
+# === SIMILARITY GATE ===
+# Before capturing PID-X, check if the last N captures are "too similar":
+#   - Same PID + Same angle category + < 60s apart = BLOCKED
+#   - Same PID + Different angle = ALLOWED
+#   - Same PID + Same angle but > 60s = ALLOWED (enough time passed)
+#   - Different PID = ALWAYS ALLOWED
+
+SIMILARITY_WINDOW_SEC = 60.0
+MAX_SAME_ANGLE_PER_PID = 2  # Max 2 photos of same person at same angle
+
+def is_too_similar(pid, current_angle, capture_history):
+    recent = [c for c in capture_history 
+              if c.pid == pid 
+              and c.angle == current_angle 
+              and (now() - c.timestamp) < SIMILARITY_WINDOW_SEC]
+    return len(recent) >= MAX_SAME_ANGLE_PER_PID
+```
+
+#### 7.7.4 Subject Diversity & Fairness Algorithm
+
+```python
+# Priority Score per visible PID (dynamic, recalculated every frame):
+def compute_priority(pid_state, avg_captures):
+    base = max(0.1, 1.0 - (pid_state.capture_count / max(avg_captures * 2, 1)))
+    novelty = 1.5 if pid_state.capture_count == 0 else 1.0
+    angle_var = 1.3 if pid_state.has_uncaptured_angles() else 1.0
+    cooldown = 0.0 if pid_state.in_cooldown() else 1.0
+    starvation = 2.0 if pid_state.capture_count == 0 and pid_state.visible_duration > 30 else 1.0
+    
+    return base * novelty * angle_var * cooldown * starvation
+```
+
+**Gini Coefficient Target: <= 0.35.** When Gini exceeds 0.40, Equity Mode activates (only under-photographed PIDs trigger). When Gini drops below 0.30, normal mode resumes (hysteresis prevents oscillation).
+
+### 7.8 False Positive Elimination (Multi-Layer)
+
+**Detection-Level Filters:**
+
+| Filter | Value | Purpose |
+|---|---|---|
+| Confidence threshold | `conf >= 0.50` | Reject ghost detections |
+| Bbox aspect ratio | `0.15 < (w/h) < 0.80` | Reject poles, banners |
+| Minimum bbox area | `>= 2500px` | Reject tiny/distant false triggers |
+| Temporal consistency | 3+ consecutive frames | Reject single-frame hallucinations |
+
+**Shutter-Level Safeguards:**
+
+| Safeguard | Rule | Purpose |
+|---|---|---|
+| Face presence | >= 1 face with `det_score >= 0.7` | Don't shoot backs of heads |
+| Motion freeze | Centroid velocity < 15px/frame for 5 frames | Prevent motion blur |
+| AF confirmation | AF lock within 500ms timeout | Ensure sharpness |
+| Engagement score | `>= 0.55` for 3 consecutive frames | Ensure good expression |
+
+### 7.9 Shot Variety Ratio (Professional Standard: 70/30 Rule)
+
+| Type | Target % | Description |
+|---|---|---|
+| **Candid** | 70% | Natural interactions, genuine emotions, unposed |
+| **Posed/Guided** | 30% | VIP portraits, group shots, branding |
+
+**Candid Sub-Distribution:**
+
+| Sub-type | % of Total | Trigger |
+|---|---|---|
+| Solo candid | 25% | 1 person, natural pose, engagement > 0.5 |
+| Duo interaction | 20% | 2 people facing each other |
+| Group candid (3+) | 15% | 3+ clustered, >= 2 faces visible |
+| Reaction shots | 10% | Person looking toward stage/speaker |
+
+### 7.10 Exposure Compensation Rules
 
 ```python
 EXPOSURE_COMP_RULES = {
-    "backlit_subject": +1.0,        # Subject darker than background
-    "bright_background": +0.7,      # White walls, windows
-    "dark_clothing_dominant": +0.3,  # Avoid underexposure
-    "snow_or_beach": +1.5,          # Highly reflective scene
-    "stage_spotlight": -0.7,        # Avoid blown highlights
+    "backlit_subject": +1.0,
+    "bright_background": +0.7,
+    "dark_clothing_dominant": +0.3,
+    "snow_or_beach": +1.5,
+    "stage_spotlight": -0.7,
     "default": 0.0
 }
+```
+
+### 7.11 Complete Hardcoded Constants (Single Source of Truth)
+
+```python
+# ══════════════════════════════════════════════════════════════
+#  REC CAPTURE INTELLIGENCE - HARDCODED CONSTANTS
+#  These values are NOT configurable at runtime.
+#  They are the result of research + tuning and must be
+#  changed ONLY via code review + testing.
+# ══════════════════════════════════════════════════════════════
+
+# --- Cooldown (Dynamic, Fail-Safe) ---
+COOLDOWN_MIN_SEC             = 5.0      # Floor: never less than 5s
+COOLDOWN_BASE_SEC            = 12.0     # Starting cooldown
+COOLDOWN_MAX_SEC             = 120.0    # Ceiling: never more than 2 min
+ESCALATION_PER_CAPTURE       = 0.3      # +30% per capture
+DECAY_RATE_PER_SEC           = 0.02     # -2% per second idle
+GLOBAL_MIN_INTERVAL_SEC      = 2.0      # Min between ANY two captures
+GLOBAL_MAX_IDLE_SEC          = 30.0     # Watchdog: halve all cooldowns
+HEARTBEAT_FORCE_SEC          = 45.0     # Force-capture safety net
+STARVATION_THRESHOLD_SEC     = 60.0     # Force-unlock never-captured PIDs
+
+# --- Engagement ---
+ENGAGEMENT_THRESHOLD         = 0.55     # Normal trigger threshold
+ENGAGEMENT_EMERGENCY         = 0.35     # Watchdog-lowered threshold
+ENGAGEMENT_STARVATION        = 0.30     # Starvation-override threshold
+MIN_SUSTAIN_FRAMES           = 3        # Frames above threshold before trigger
+
+# --- Diversity ---
+MAX_SOLO_CAPTURES_PER_PID    = 8
+MAX_TOTAL_CAPTURES_PER_PID   = 20
+GINI_TARGET                  = 0.35
+GINI_EQUITY_ENTER            = 0.40     # Enter equity mode above this
+GINI_EQUITY_EXIT             = 0.30     # Exit equity mode below this (hysteresis)
+
+# --- Similarity Suppression ---
+SIMILARITY_WINDOW_SEC        = 60.0
+MAX_SAME_ANGLE_PER_PID       = 2
+
+# --- Face Quality Gates ---
+YAW_MAX_DEGREES              = 45
+PITCH_RANGE_DEGREES          = (-30, 30)
+ROLL_MAX_DEGREES             = 15
+MIN_FACE_HEIGHT_PX           = 80
+PERSON_CONF_THRESHOLD        = 0.50
+FACE_DET_SCORE_THRESHOLD     = 0.70
+
+# --- Detection Filters ---
+BBOX_ASPECT_RATIO_RANGE      = (0.15, 0.80)
+MIN_BBOX_AREA_PX             = 2500
+TEMPORAL_CONSISTENCY_FRAMES  = 3
+MOTION_VELOCITY_THRESHOLD    = 15       # px/frame
+
+# --- Camera ---
+AF_TIMEOUT_MS                = 500
+CANDID_TARGET_RATIO          = 0.70
+POSED_TARGET_RATIO           = 0.30
 ```
 
 ---
@@ -1761,6 +2047,96 @@ services:
 
 ---
 
+
+---
+
+### 7.12 Edge Case Scenarios & Handling Matrix
+
+> **Every scenario below has been encountered in real-world event photography. Each one defines the exact detection strategy, camera adjustment, and capture decision to prevent deadlock or false output.**
+
+#### Category A: High-Motion Scenarios
+
+| # | Scenario | Detection Challenge | Camera Adjustment | Capture Strategy |
+|---|---|---|---|---|
+| A1 | **People Dancing** | Rapid limb movement causes bbox jitter, face blur, and tracking ID swaps | Shutter >= 1/500s, ISO auto-raise to 3200+, aperture f/2.8 for light | **Relax motion stability gate** to 25px/frame (up from 15). Use burst mode: fire 3-frame burst, keep sharpest via IQG blur score. Engagement threshold drops to 0.40 when scene `avg_velocity > 30px/frame`. |
+| A2 | **Children Running** | Unpredictable trajectory, small bbox, frequent exit/re-entry | Shutter >= 1/500s, continuous AF (AF-C), burst mode | Lower `MIN_FACE_HEIGHT_PX` to 60 for child-size bboxes. Increase tracker `max_age` to 90 frames (children exit and re-enter fast). Starvation detector activates at 30s instead of 60s. |
+| A3 | **Walking Subjects** | Moderate motion, periodic face occlusion (head turns while walking) | Shutter >= 1/250s | **Predict stop point:** if velocity is decelerating over 5 frames, pre-focus on predicted stop location. Capture on the deceleration frame where velocity < 10px/frame. |
+| A4 | **Stage Performance** | Rapid movement, colored stage lighting, spotlight extremes | Shutter >= 1/500s, exposure comp -0.7 (spotlight), custom WB | Use `stage_zone` ROI mask. Accept higher motion blur for artistic effect. **Disable engagement score** for stage zone (performers don't look at autonomous cameras). Capture on beat pauses. |
+
+#### Category B: Occlusion & Overlap
+
+| # | Scenario | Detection Challenge | Handling Strategy |
+|---|---|---|---|
+| B1 | **People Overlapping (Crowd)** | Merged bounding boxes, suppressed detections via NMS | Use Soft-NMS (score decay instead of hard suppression). If two bboxes overlap > 60% IoU, track the merged entity and split when separation detected. **Never discard a high-confidence (>0.7) detection just because it overlaps another.** |
+| B2 | **Person Behind Pillar/Object** | Track lost during occlusion, new ID assigned on re-emergence | Tracker `max_age = 60 frames` (4s at 15fps). On re-emergence, immediately run Re-ID matching against gallery within 200px radius of last-known position. Spatial-temporal plausibility score handles this. |
+| B3 | **Person Sitting Down / Standing Up** | Bbox aspect ratio changes dramatically (0.5 → 1.2), tracker may lose ID | Body proportion feature weight reduced to 0.05 during transition (detect posture change via aspect ratio delta > 0.3 between frames). Deep embedding + color histogram maintain identity. |
+| B4 | **Person Turns Around (Back to Camera)** | Face detection drops, person detection stays | Enter `CANDID_BEHIND` mode. **Do NOT trigger face-required shutter gate.** Instead, use body-only composition for interaction shots (two people facing each other, captured from behind one). Log as candid, not portrait. |
+
+#### Category C: Lighting & Environment
+
+| # | Scenario | Detection Challenge | Camera Adjustment | Handling Strategy |
+|---|---|---|---|---|
+| C1 | **Backlit Subject (Silhouette)** | Face underexposed, detection confidence drops | Exposure comp +1.0 to +1.5, fill flash if available | If face `det_score < 0.5` but person `conf > 0.7`, increase exposure comp and **retry detection on next frame** before giving up. Max 3 retries. |
+| C2 | **Very Low Light (Dance Floor)** | Noise causes false detections, AF hunts | ISO 3200-6400, shutter 1/125s minimum, f/1.8-2.0 | Raise `PERSON_CONF_THRESHOLD` to 0.60 (more strict to filter noise-based ghosts). Accept lower aesthetic scores from NIMA (threshold 3.5 instead of 4.5). |
+| C3 | **Sudden Light Change (Flash/Spotlight Sweep)** | Temporary whiteout/blackout causes mass track loss | Auto-exposure adaptation | **Freeze all capture decisions for 500ms** after detecting > 50% pixel intensity change between frames. Resume after exposure stabilizes. Prevents burst-firing during transitions. |
+| C4 | **Mixed Color Temperature (LED + Daylight)** | Skin tones appear unnatural, face detection accuracy drops | Custom WB per zone, or shoot RAW | Post-capture WB correction. Detection models are trained on diverse lighting; no detection-level adjustment needed. |
+
+#### Category D: False Positive Sources
+
+| # | Scenario | False Positive Cause | Elimination Strategy |
+|---|---|---|---|
+| D1 | **Mirrors / Glass Reflections** | Model detects reflection as second person | **Static zone masking:** During venue setup, calibrate known mirror/glass locations and mask those ROIs. **Runtime:** If two detections are perfectly symmetric across a vertical axis and one is in a known reflective zone, suppress the reflected one. |
+| D2 | **Posters / Banners with People** | High-res printed faces trigger face detection | **Temporal consistency filter:** If a "person" has zero pixel movement for > 10 seconds, flag as static object and permanently suppress that bbox region for the session. |
+| D3 | **TV Screens / Projectors** | Video of people on screens triggers detection | **Screen zone exclusion:** Pre-calibrate known screen locations. **Runtime:** Detect rectangular high-refresh-rate regions (flickering at 60Hz vs static environment) and exclude from detection pipeline. |
+| D4 | **Mannequins / Statues** | Human-shaped objects trigger person detection | Same as D2: zero-movement temporal filter. If `centroid_velocity == 0` for 300+ consecutive frames (20s), add bbox center to permanent exclusion list. |
+
+#### Category E: Social & Interaction Scenarios
+
+| # | Scenario | Detection Challenge | Capture Strategy |
+|---|---|---|---|
+| E1 | **Two People Talking (Conversation)** | Faces partially turned toward each other, not camera | **INTERACTION mode.** Detect via: two PIDs within 1.5x body-width, face yaw > 20 deg toward each other. Capture from slight angle showing both faces. Engagement gate uses body-language signals (leaning in, gestures) instead of smile/gaze. |
+| E2 | **Handshake / Award Ceremony** | Brief moment (~2s), requires precise timing | **Event trigger mode:** When two people approach each other and arm positions suggest reaching, reduce `MIN_SUSTAIN_FRAMES` to 1 (instant trigger). Burst 3 frames. Pick best via IQG. |
+| E3 | **Toast / Raised Glasses** | Arms raised obscure faces, unusual body pose | Lower face-height requirement to 50px. Accept partial face visibility. Prioritize wide-angle framing showing the gesture. Classify as `CEREMONY` mode with f/5.6 for group depth. |
+| E4 | **Speaker at Podium** | Static person, same angle for extended time | After 3 captures of same PID at same angle from podium zone, **force-rotate to audience reaction shots**. Alternate: 2 speaker captures → 1 audience reaction capture. Prevents 50 identical speaker photos. |
+| E5 | **Entrance / Exit Transition** | Person appears for < 3 seconds, moves quickly through frame | Reduce `TEMPORAL_CONSISTENCY_FRAMES` to 2 for entrance/exit zones. Pre-focus on entrance point. Capture on first valid engagement frame, bypass normal cooldown for entrance-zone PIDs. |
+
+#### Category F: System & Hardware Edge Cases
+
+| # | Scenario | Failure Mode | Fail-Safe |
+|---|---|---|---|
+| F1 | **Camera AF Fails to Lock** | AF timeout (500ms) exceeded, no capture | **Skip AF, capture anyway** with last-known focus distance. Better to have slightly soft focus than zero captures. Log as `AF_FALLBACK`. IQG blur filter will discard if truly unusable. |
+| F2 | **Detection Model Returns Zero Detections Despite People Present** | Model blind spot, lighting, or angle issue | **Heartbeat system (Section 7.7.2)** force-captures after 45s of silence. Additionally: if person_count was > 0 for 10+ seconds then drops to 0, lower `PERSON_CONF_THRESHOLD` by 0.05 for 5 seconds and re-evaluate. |
+| F3 | **Storage Full / Write Error** | Disk/SSD at capacity | **Stop capturing immediately.** Send Redis alert to Admin portal. Begin deleting IQG-rejected images first (lowest aesthetic score). Resume when > 500MB free. Never lose approved images. |
+| F4 | **All PIDs in Cooldown Simultaneously** | Deadlock: everyone visible but everyone blocked | **Immediate override:** Reset all cooldowns to `COOLDOWN_MIN_SEC` (5s). Log `COOLDOWN_MASS_RESET`. This can only happen when very few people are present. The dynamic decay system (7.7.1) prevents this in crowds. |
+| F5 | **Tracker ID Explosion (Too Many PIDs)** | Memory/CPU overload from hundreds of stale PIDs | **Garbage collection:** Every 60 seconds, prune PIDs not seen for > 300 seconds (5 min). Cap active gallery at 500 PIDs. Oldest unseen PIDs evicted first (LRU). |
+
+#### Edge Case Constants
+
+```python
+# === EDGE CASE OVERRIDES (HARDCODED) ===
+DANCE_MOTION_VELOCITY_THRESHOLD  = 25      # Relaxed from 15px/frame for dancing
+DANCE_ENGAGEMENT_THRESHOLD       = 0.40    # Lowered from 0.55 for high-motion
+DANCE_BURST_FRAMES               = 3       # Burst capture count in dance mode
+CHILD_MIN_FACE_HEIGHT_PX         = 60      # Lowered from 80 for smaller faces
+CHILD_STARVATION_SEC             = 30      # Faster starvation for children (vs 60s)
+STAGE_ENGAGEMENT_BYPASS          = True    # Skip engagement score for performers
+BACKLIT_RETRY_MAX                = 3       # Max exposure retry attempts
+LIGHT_CHANGE_FREEZE_MS           = 500     # Pause captures during light transitions
+STATIC_OBJECT_SUPPRESS_FRAMES   = 300     # 20s at 15fps = flag as poster/mannequin
+HANDSHAKE_SUSTAIN_FRAMES         = 1       # Instant trigger for brief moments
+ENTRANCE_ZONE_TEMPORAL_FRAMES   = 2       # Faster temporal consistency at doors
+AF_FALLBACK_ENABLED              = True    # Capture even if AF fails
+COOLDOWN_MASS_RESET_ENABLED      = True    # Emergency override when all PIDs blocked
+PID_GALLERY_MAX                  = 500     # Max active PIDs in gallery
+PID_EVICTION_TIMEOUT_SEC         = 300     # Prune PIDs unseen for 5 minutes
+STORAGE_CRITICAL_MB              = 500     # Min free space before auto-cleanup
+SPEAKER_AUDIENCE_RATIO           = (2, 1)  # 2 speaker shots per 1 audience reaction
+LOW_LIGHT_NIMA_THRESHOLD         = 3.5     # Relaxed from 4.5 in low light
+LOW_LIGHT_CONF_THRESHOLD         = 0.60    # Stricter person detection in noise
+```
+
+---
+
 ## 16. Glossary
 
 | Term | Definition |
@@ -1788,7 +2164,7 @@ services:
 
 ---
 
-*End of PRD v1.0.0*
+*End of PRD v1.1.0*
 
 
 

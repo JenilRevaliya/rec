@@ -2,6 +2,8 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+ENV PYTHONUNBUFFERED=1
+
 RUN apt-get update && apt-get install -y \
     libusb-1.0-0-dev \
     libgphoto2-dev \

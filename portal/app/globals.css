@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-neo-bg text-neo-black font-sans selection:bg-neo-orange selection:text-white;
+  }
+}
+
+@layer utilities {
+  .neo-btn {
+    @apply bg-neo-yellow border-2 border-neo-black shadow-neo font-bold px-6 py-3 uppercase tracking-wider 
+    transition-all duration-150 ease-in-out
+    hover:-translate-y-1 hover:shadow-neo-lg hover:bg-neo-green
+    active:translate-y-1 active:shadow-neo-hover active:bg-neo-orange;
+  }
+
+  .neo-card {
+    @apply bg-white border-2 border-neo-black shadow-neo p-6 transition-all duration-200
+    hover:shadow-neo-lg hover:-translate-y-1;
+  }
+}

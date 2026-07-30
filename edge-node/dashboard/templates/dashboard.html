@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>REC Edge - Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { background-color: #fdfbf7; font-family: 'Courier New', Courier, monospace; }
+        .neo-box { border: 3px solid #000; box-shadow: 4px 4px 0px #000; background-color: white; }
+        .neo-button { border: 3px solid #000; box-shadow: 4px 4px 0px #000; font-weight: bold; cursor: pointer; transition: all 0.1s; }
+        .neo-button:active { transform: translate(4px, 4px); box-shadow: 0px 0px 0px #000; }
+        .neo-button-green { background-color: #7bfa7b; }
+        .neo-button-red { background-color: #ff6b6b; }
+        .neo-button-blue { background-color: #4dc5fa; }
+        .neo-button-yellow { background-color: #fca311; }
+    </style>
+</head>
+<body class="w-full min-h-screen p-6">
+
+    <header class="neo-box p-4 flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-2xl font-black uppercase tracking-tighter">REC Edge Dashboard</h1>
+            <p class="text-xs font-bold uppercase text-gray-500">Photographer: {{ user }}</p>
+        </div>
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2 neo-box px-3 py-1 text-sm font-bold bg-gray-100">
+                <span>Orchestrator:</span>
+                <span id="orch-status" class="uppercase {{ 'text-green-600' if status == 'Running' else 'text-red-600' }}">{{ status }}</span>
+            </div>
+            <button id="toggle-orch" class="neo-button px-4 py-2 text-sm uppercase {{ 'neo-button-red' if status == 'Running' else 'neo-button-green' }}">
+                {{ "Stop Capture" if status == 'Running' else "Start Capture" }}
+            </button>
+        </div>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Left Column: Camera Feed & Settings -->
+        <div class="lg:col-span-1 flex flex-col gap-6">
+            
+            <div class="neo-box p-4 bg-black flex flex-col items-center justify-center relative min-h-[300px]">
+                <div class="absolute top-4 left-4 bg-red-600 text-white text-xs font-bold px-2 py-1 uppercase flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-white animate-pulse block"></span> Live
+                </div>
+                <i data-lucide="camera" class="text-white w-16 h-16 opacity-50 mb-2"></i>
+                <p class="text-gray-400 text-sm font-bold uppercase">Mount camera on tripod to begin</p>
+            </div>
+
+            <div class="neo-box p-4">
+                <h2 class="font-black uppercase mb-4 text-lg border-b-2 border-black pb-2">Sync Controls</h2>
+                
+                <div class="flex items-center justify-between mb-2">
+                    <span class="font-bold uppercase text-sm">Cloud Auto-Sync</span>
+                    <button id="toggle-sync" class="neo-button px-4 py-1 text-sm uppercase {{ 'neo-button-green' if sync_enabled else 'neo-button-yellow' }}">
+                        {{ "ON" if sync_enabled else "OFF" }}
+                    </button>
+                </div>
+                <p class="text-xs text-gray-500 font-bold leading-tight">
+                    When ON: Photos upload immediately for AI processing. <br>
+                    When OFF: Photos buffer on local SSD with no data loss.
+                </p>
+            </div>
+
+        </div>
+
+        <!-- Right Column: Live Capture Grid -->
+        <div class="lg:col-span-2 neo-box p-4 flex flex-col">
+            <h2 class="font-black uppercase mb-4 text-lg border-b-2 border-black pb-2">Live Capture Buffer</h2>
+            
+            <!-- We will simulate real-time captured images arriving -->
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4" id="capture-grid">
+                
+                <div class="neo-box p-2 bg-gray-100 flex flex-col items-center justify-center text-center h-48 border-dashed">
+                    <p class="text-sm font-bold uppercase text-gray-500">Waiting for Auto-Capture...</p>
+                </div>
+                
+            </div>
+            
+        </div>
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        // Start/Stop Orchestrator
+        const toggleOrchBtn = document.getElementById('toggle-orch');
+        const statusText = document.getElementById('orch-status');
+
+        toggleOrchBtn.addEventListener('click', async () => {
+            const isRunning = statusText.innerText.trim() === 'RUNNING';
+            const endpoint = isRunning ? '/api/stop-orchestrator' : '/api/start-orchestrator';
+            
+            const res = await fetch(endpoint, { method: 'POST' });
+            if (res.ok) {
+                if (isRunning) {
+                    statusText.innerText = 'STOPPED';
+                    statusText.className = 'uppercase text-red-600';
+                    toggleOrchBtn.innerText = 'START CAPTURE';
+                    toggleOrchBtn.className = 'neo-button px-4 py-2 text-sm uppercase neo-button-green';
+                } else {
+                    statusText.innerText = 'RUNNING';
+                    statusText.className = 'uppercase text-green-600';
+                    toggleOrchBtn.innerText = 'STOP CAPTURE';
+                    toggleOrchBtn.className = 'neo-button px-4 py-2 text-sm uppercase neo-button-red';
+                }
+            }
+        });
+
+        // Toggle Sync
+        const toggleSyncBtn = document.getElementById('toggle-sync');
+        let syncOn = {{ 'true' if sync_enabled else 'false' }};
+        
+        toggleSyncBtn.addEventListener('click', async () => {
+            syncOn = !syncOn;
+            const res = await fetch('/api/toggle-sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ enabled: syncOn })
+            });
+            if (res.ok) {
+                if (syncOn) {
+                    toggleSyncBtn.innerText = 'ON';
+                    toggleSyncBtn.className = 'neo-button px-4 py-1 text-sm uppercase neo-button-green';
+                } else {
+                    toggleSyncBtn.innerText = 'OFF';
+                    toggleSyncBtn.className = 'neo-button px-4 py-1 text-sm uppercase neo-button-yellow';
+                }
+            }
+        });
+
+        // Local Buffer Hydration (Real-time stream)
+        async function fetchBuffer() {
+            try {
+                const res = await fetch('/api/buffer');
+                if (res.ok) {
+                    const data = await res.json();
+                    const grid = document.getElementById('capture-grid');
+                    
+                    if (data.photos && data.photos.length > 0) {
+                        grid.innerHTML = '';
+                        data.photos.forEach(photo => {
+                            const div = document.createElement('div');
+                            div.className = 'neo-box relative group bg-gray-100 flex flex-col h-48 overflow-hidden';
+                            
+                            // Delete button (appears on hover)
+                            const delBtn = document.createElement('button');
+                            delBtn.className = 'absolute top-2 right-2 bg-red-500 text-white font-bold p-1 border-2 border-black opacity-0 group-hover:opacity-100 transition-opacity z-10 text-xs';
+                            delBtn.innerHTML = 'Discard';
+                            delBtn.onclick = async () => {
+                                const delRes = await fetch(`/api/photos/${photo.filename}`, { method: 'DELETE' });
+                                if (delRes.ok) fetchBuffer();
+                            };
+
+                            const img = document.createElement('img');
+                            img.src = photo.url;
+                            img.className = 'w-full h-full object-cover transition-transform group-hover:scale-105';
+                            
+                            div.appendChild(delBtn);
+                            div.appendChild(img);
+                            grid.appendChild(div);
+                        });
+                    } else {
+                        grid.innerHTML = `
+                            <div class="col-span-full neo-box p-2 bg-gray-100 flex flex-col items-center justify-center text-center h-48 border-dashed">
+                                <p class="text-sm font-bold uppercase text-gray-500">Waiting for Auto-Capture...</p>
+                            </div>
+                        `;
+                    }
+                }
+            } catch (err) {
+                console.error("Buffer fetch failed", err);
+            }
+        }
+        
+        // Poll every 2 seconds
+        setInterval(fetchBuffer, 2000);
+        fetchBuffer(); // initial fetch
+    </script>
+</body>
+</html>

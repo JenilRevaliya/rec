@@ -4,19 +4,31 @@ onvif-zeep==0.2.12
 wsdiscovery==2.0.0
 
 # Computer vision & detection
-# ultralytics==8.2.0          # YOLOv8n
+ultralytics==8.2.0          # YOLOv8n
 opencv-python-headless==4.9.0.80
 numpy==1.26.4
 
 # Person Re-ID (PIS)
 torchreid==0.2.1            # OSNet x0.25
-# torch>=2.2.0
-# torchvision>=0.17.0
+torch>=2.2.0
+torchvision>=0.17.0
 
 # Utilities
 asyncio
 dataclasses
+redis==5.0.4
 # scipy==1.13.0               # euclidean distance
+
+# Web Server & Dashboard (Legacy Localhost)
+fastapi==0.110.1
+uvicorn==0.29.0
+jinja2==3.1.3
+requests==2.31.0
+websockets==12.0
+
+# Native Desktop App
+PyQt6==6.7.0
+pyinstaller==6.6.0
 
 # Testing
 pytest==8.2.0
