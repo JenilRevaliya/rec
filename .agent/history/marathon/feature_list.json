@@ -15,8 +15,8 @@
       "dependencies": [],
       "attempts": 0,
       "failureReasons": [],
-      "passes": false,
-      "sessionCompleted": null
+      "passes": true,
+      "sessionCompleted": "2026-07-30T07:33:04.376Z"
     },
     {
       "id": 2,
@@ -30,8 +30,8 @@
       "dependencies": [],
       "attempts": 0,
       "failureReasons": [],
-      "passes": false,
-      "sessionCompleted": null
+      "passes": true,
+      "sessionCompleted": "2026-07-30T07:33:38.199Z"
     },
     {
       "id": 3,
