@@ -23,7 +23,7 @@ redis==5.0.4
 
 # Face detection + embedding
 insightface==0.7.3          # RetinaFace + face alignment
-onnxruntime-gpu==1.18.0     # AuraFace ONNX backend
+onnxruntime==1.18.0         # AuraFace ONNX backend
 # AuraFace v1 weights loaded from HuggingFace Hub:
 huggingface-hub==0.23.2
 

@@ -24,13 +24,6 @@ services:
       context: ./edge-node
       dockerfile: Dockerfile
     command: python -m detection.engine
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
     environment:
       - REDIS_URL=redis://redis:6379/0
     depends_on:
@@ -83,13 +76,6 @@ services:
       context: ./cloud-api
       dockerfile: Dockerfile
     command: celery -A tasks.celery_app worker --loglevel=info --concurrency=2
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
     environment:
       - DATABASE_URL=postgresql+asyncpg://rec:${DB_PASSWORD}@postgres:5432/rec
       - REDIS_URL=redis://redis:6379/0

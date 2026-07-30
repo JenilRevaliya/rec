@@ -126,19 +126,19 @@ REC is the **only system that automates both the capture and the delivery** — 
 │                                                                      │
 │  ┌─────────────┐    ┌─────────────────────────────────────────────┐  │
 │  │  CAMERA(S)  │◄──►│         CAMERA CONTROL LAYER                │  │
-│  │ DSLR / PTZ  │    │  gPhoto2 · ONVIF · digiCamControl          │  │
+│  │ DSLR / PTZ  │    │  gPhoto2 · ONVIF · digiCamControl           │  │
 │  └─────────────┘    └──────────────┬──────────────────────────────┘  │
 │                                    │ Live Preview Stream (Low-Res)   │
 │                                    ▼                                 │
 │  ┌─────────────────────────────────────────────────────────────────┐ │
-│  │              LIGHTWEIGHT HUMAN DETECTION ENGINE                  │ │
+│  │              LIGHTWEIGHT HUMAN DETECTION ENGINE                 │ │
 │  │         YOLOv8n / NanoDet-Plus  (Person class only)             │ │
 │  │    Runs on live preview @ 15-30 FPS · GPU or CPU                │ │
 │  └──────────────┬──────────────────────────────────────────────────┘ │
 │                 │ Detection Events (bbox, confidence, count)         │
 │                 ▼                                                    │
 │  ┌─────────────────────────────────────────────────────────────────┐ │
-│  │              AUTO-CAPTURE ORCHESTRATOR                           │ │
+│  │              AUTO-CAPTURE ORCHESTRATOR                          │ │
 │  │  • Composition Rule Engine (Rule of Thirds, Framing)            │ │
 │  │  • Subject Diversity Scheduler (anti-repeat logic)              │ │
 │  │  • Group Formation Detector (solo/duo/trio/group)               │ │
@@ -148,7 +148,7 @@ REC is the **only system that automates both the capture and the delivery** — 
 │                 │ Trigger Shutter / Adjust Settings                  │
 │                 ▼                                                    │
 │  ┌─────────────────────────────────────────────────────────────────┐ │
-│  │              IMAGE QUALITY GATE (IQG)                            │ │
+│  │              IMAGE QUALITY GATE (IQG)                           │ │
 │  │  Stage 1: Blur Detection (Laplacian Variance)                   │ │
 │  │  Stage 2: Face Presence Verification (RetinaFace)               │ │
 │  │  Stage 3: Composition Score (NIMA Aesthetic Model)              │ │
@@ -173,7 +173,7 @@ REC is the **only system that automates both the capture and the delivery** — 
 │                 ▼                                                    │
 │  ┌─────────────────────────────────────────────────────────────────┐ │
 │  │         USER PORTAL & SELFIE-MATCH RETRIEVAL                    │ │
-│  │  Upload selfie → Extract embedding (same model) →              │ │
+│  │  Upload selfie → Extract embedding (same model) →               │ │
 │  │  ANN search (cosine similarity) → Return matched photos         │ │
 │  └─────────────────────────────────────────────────────────────────┘ │
 │                                                                      │
