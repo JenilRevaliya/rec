@@ -4,6 +4,8 @@
   "private": true,
   "description": "REC — Real-time Event Capture: Autonomous AI Photography System",
   "workspaces": [
+    "edge-node",
+    "cloud-api",
     "portal",
     "shared"
   ],

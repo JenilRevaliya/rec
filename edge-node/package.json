@@ -1,0 +1,6 @@
+{
+  "name": "edge-node",
+  "version": "0.1.0",
+  "private": true,
+  "description": "REC Edge Node Python Services"
+}
