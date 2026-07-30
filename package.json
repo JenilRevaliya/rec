@@ -1,0 +1,14 @@
+{
+  "name": "rec",
+  "version": "0.1.0",
+  "private": true,
+  "description": "REC — Real-time Event Capture: Autonomous AI Photography System",
+  "workspaces": [
+    "portal",
+    "shared"
+  ],
+  "scripts": {
+    "dev:portal": "npm -w portal run dev",
+    "build:portal": "npm -w portal run build"
+  }
+}

@@ -1,0 +1,1564 @@
+{
+  "spec": "REC — Real-time Event Capture: Autonomous AI Photography System",
+  "createdAt": "2026-07-30T07:22:24.450Z",
+  "totalFeatures": 107,
+  "features": [
+    {
+      "id": 1,
+      "category": "infra",
+      "description": "Monorepo scaffold: edge-node, cloud-api, portal, and shared packages directories exist with package.json in each",
+      "steps": [
+        "ls -d edge-node cloud-api portal shared",
+        "Each has a package.json",
+        "Root package.json has workspaces configured"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 2,
+      "category": "infra",
+      "description": "Docker Compose file defines all services: camera-controller, detection-engine, capture-orchestrator, api-gateway, embedding-worker, postgres, redis, minio, portal",
+      "steps": [
+        "docker compose config --quiet",
+        "All 9 service names present",
+        "No syntax errors"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 3,
+      "category": "infra",
+      "description": "PostgreSQL with pgvector extension initializes on first run with all schema tables (events, cameras, images, face_embeddings, face_clusters, portal_users)",
+      "steps": [
+        "docker compose up postgres -d",
+        "psql -c '\\dt'",
+        "All 6 tables exist",
+        "pgvector extension loaded"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 4,
+      "category": "infra",
+      "description": "MinIO object storage starts and auto-creates the 'rec-images' bucket on first run",
+      "steps": [
+        "docker compose up minio -d",
+        "mc alias set local http://localhost:9000 && mc ls local/",
+        "rec-images bucket exists"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 5,
+      "category": "infra",
+      "description": "Redis starts and is reachable; Celery worker connects and reports healthy",
+      "steps": [
+        "docker compose up redis embedding-worker -d",
+        "celery -A worker inspect ping",
+        "Worker responds"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 6,
+      "category": "infra",
+      "description": "init.sh bootstrap script starts entire stack (edge + cloud) with a single command and prints all service URLs",
+      "steps": [
+        "bash init.sh",
+        "All containers Running",
+        "URLs printed to stdout"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 7,
+      "category": "infra",
+      "description": "Environment variable template (.env.example) covers all required secrets: DB_URL, MINIO_KEY, REDIS_URL, JWT_SECRET, MINIO_BUCKET",
+      "steps": [
+        "cat .env.example",
+        "All 5 keys present",
+        "No real secrets committed"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 8,
+      "category": "infra",
+      "description": "Prometheus + Grafana start and Prometheus can scrape the api-gateway /metrics endpoint",
+      "steps": [
+        "curl -s http://localhost:9090/api/v1/targets",
+        "api-gateway target state=up"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 9,
+      "category": "camera",
+      "description": "CameraDriver abstract base class defined with connect, get_live_preview_frame, trigger_autofocus, capture_image, set_aperture, set_iso, set_shutter_speed, move_ptz methods",
+      "steps": [
+        "python -c 'from camera.base import CameraDriver'",
+        "All 8 abstract methods present",
+        "Raises NotImplementedError on move_ptz for non-PTZ"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 10,
+      "category": "camera",
+      "description": "DSLRDriver (gPhoto2) implements CameraDriver: connect() detects USB camera via gphoto2 --auto-detect and returns True/False",
+      "steps": [
+        "python -c 'from camera.dslr import DSLRDriver; d=DSLRDriver(); print(d.connect())'",
+        "Returns bool without exception"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 11,
+      "category": "camera",
+      "description": "DSLRDriver.get_live_preview_frame() returns a numpy ndarray (BGR) from the camera LiveView stream",
+      "steps": [
+        "Unit test with mock gphoto2",
+        "Returns np.ndarray shape (H,W,3)",
+        "dtype uint8"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 12,
+      "category": "camera",
+      "description": "DSLRDriver.trigger_autofocus() sends autofocusdrive config widget and polls for AF confirmation within 500ms timeout; returns True on success",
+      "steps": [
+        "Unit test with mock camera",
+        "Returns True on AF lock",
+        "Returns False on timeout"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 13,
+      "category": "camera",
+      "description": "DSLRDriver.capture_image() triggers GP_CAPTURE_IMAGE, downloads the file to local buffer, and returns CapturedImage with filepath, timestamp, camera_id",
+      "steps": [
+        "Unit test with mock gphoto2",
+        "CapturedImage.filepath exists on disk",
+        "timestamp is float"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 14,
+      "category": "camera",
+      "description": "PTZDriver (ONVIF) implements CameraDriver.connect() by discovering camera via wsdiscovery and authenticating via WS-Security digest auth",
+      "steps": [
+        "Unit test with mock ONVIF",
+        "connect() returns True on valid credentials"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 15,
+      "category": "camera",
+      "description": "PTZDriver.move_ptz(pan, tilt, zoom) sends ONVIF ContinuousMove command with correct velocity vector; clamps inputs to [-1, 1]",
+      "steps": [
+        "Unit test: values outside range are clamped",
+        "SOAP payload contains correct velocity"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 16,
+      "category": "camera",
+      "description": "PTZDriver.move_ptz raises NotSupported on DSLRDriver; DSLRDriver.move_ptz raises NotImplementedError correctly",
+      "steps": [
+        "python -c 'from camera.dslr import DSLRDriver; DSLRDriver().move_ptz(0,0,0)'",
+        "NotImplementedError raised"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 17,
+      "category": "camera",
+      "description": "CameraManager singleton manages multiple simultaneous CameraDriver instances keyed by camera_id; supports add_camera, remove_camera, get_camera, list_cameras",
+      "steps": [
+        "Unit test: add 3 cameras, list returns 3 ids",
+        "remove then list returns 2"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 18,
+      "category": "camera",
+      "description": "Camera auto-reconnect loop: if USB disconnects, DSLRDriver retries connect() with exponential backoff (1s, 2s, 4s, 8s max) and logs each attempt",
+      "steps": [
+        "Unit test: simulate 3 failed connects then success",
+        "Final connect returns True",
+        "3 backoff delays observed"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 19,
+      "category": "detection",
+      "description": "YOLOv8n model loads successfully and runs inference on a test image, returning detections filtered to person class only (class index 0)",
+      "steps": [
+        "python -c 'from detection.yolo_detector import YOLODetector; d=YOLODetector(); print(d.detect(test_frame))'",
+        "All returned detections have class=person",
+        "No other classes present"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 20,
+      "category": "detection",
+      "description": "NanoDet-Plus model loads as CPU fallback; PersonDetector factory returns YOLODetector on CUDA and NanoDetDetector on CPU-only",
+      "steps": [
+        "CUDA_VISIBLE_DEVICES='' python -c 'from detection.factory import get_detector; print(type(get_detector()))'",
+        "Returns NanoDetDetector on CPU"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 21,
+      "category": "detection",
+      "description": "PersonDetection dataclass has bbox, confidence, centroid, bbox_area, frame_fill_ratio, timestamp, camera_id fields; centroid is auto-computed from bbox",
+      "steps": [
+        "Unit test: create PersonDetection with bbox=(10,10,110,210)",
+        "centroid==(60,110)",
+        "bbox_area==20000"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 22,
+      "category": "detection",
+      "description": "Detection confidence threshold filter: detections with confidence < 0.45 are discarded; threshold is configurable via constructor arg",
+      "steps": [
+        "Unit test with mock model returning confidence 0.3 and 0.7",
+        "Only 0.7 detection returned"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 23,
+      "category": "detection",
+      "description": "Frame skipping: detector processes every Nth frame (default N=2); skipped frames return previous frame's detections via cache",
+      "steps": [
+        "Unit test: call detect() 4 times with N=2",
+        "Model.forward() called exactly 2 times"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 24,
+      "category": "detection",
+      "description": "ROI masking: detector accepts an optional mask ndarray; pixels outside mask are zeroed before inference to ignore static background regions",
+      "steps": [
+        "Unit test: mask covers top half",
+        "No detections from top-half region"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 25,
+      "category": "detection",
+      "description": "Resolution downscaling: detector resizes input frame to 640x480 before inference, then maps bbox coordinates back to original frame dimensions",
+      "steps": [
+        "Unit test: 1920x1080 input",
+        "Output bboxes are in 1920x1080 coordinate space"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 26,
+      "category": "detection",
+      "description": "DetectionEngine class wraps the detector, reads frames from CameraDriver, and emits PersonDetection lists at >= 15 FPS via an async queue",
+      "steps": [
+        "Integration test: run engine for 2 seconds",
+        "At least 30 detection events emitted"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 27,
+      "category": "pis",
+      "description": "AppearanceSignature dataclass contains deep_embedding (512-dim ndarray), upper_body_color_hist (48-dim), lower_body_color_hist (48-dim), body_aspect_ratio, estimated_height_class, last_known_position, last_known_camera, last_seen_timestamp, confidence, update_count",
+      "steps": [
+        "Unit test: instantiate with all fields",
+        "All fields accessible",
+        "deep_embedding.shape==(512,)"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 28,
+      "category": "pis",
+      "description": "AppearanceExtractor.extract() returns None for frames where frame_idx % extraction_interval != 0 (default interval=5)",
+      "steps": [
+        "Unit test: call extract() 10 times with frame_idx 0..9",
+        "Returns non-None only on frames 0 and 5"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 29,
+      "category": "pis",
+      "description": "AppearanceExtractor extracts OSNet x0.25 deep embedding: loads model on GPU if available, falls back to CPU; output is L2-normalized 512-dim vector",
+      "steps": [
+        "Unit test with 128x256 person crop",
+        "np.linalg.norm(embedding) ~= 1.0",
+        "shape==(512,)"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 30,
+      "category": "pis",
+      "description": "AppearanceExtractor._compute_hsv_histogram() returns 48-dim L2-normalized array from an HSV color histogram (16 hue x 3 saturation bins)",
+      "steps": [
+        "Unit test with red patch",
+        "Non-zero values in hue bins 0-10",
+        "Array sums near 1.0"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 31,
+      "category": "pis",
+      "description": "AppearanceExtractor splits person crop at midpoint: upper half used for upper_body_color_hist (shirt), lower half for lower_body_color_hist (pants)",
+      "steps": [
+        "Unit test: red top, blue bottom crop",
+        "upper_hist peaks in red bins",
+        "lower_hist peaks in blue bins"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 32,
+      "category": "pis",
+      "description": "IdentityMatcher.compute_similarity() returns MatchResult with composite score = 0.55*deep + 0.20*color + 0.10*body + 0.15*spatial; is_match=True when composite >= 0.60",
+      "steps": [
+        "Unit test: same person embeddings",
+        "composite >= 0.80",
+        "Unit test: different persons",
+        "composite < 0.50"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 33,
+      "category": "pis",
+      "description": "IdentityMatcher._spatial_plausibility() returns 0.1 when time_gap < 0; returns 1.0 when same camera and person has not moved; returns 0.1 when pixel distance exceeds max_plausible distance",
+      "steps": [
+        "Unit test: teleport scenario",
+        "Returns 0.1",
+        "Stationary scenario returns 1.0"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 34,
+      "category": "pis",
+      "description": "GlobalIdentityLedger.register_or_match() creates a new PID when no gallery entry scores >= 0.60; returns the new PID string",
+      "steps": [
+        "Unit test: empty gallery + new signature",
+        "PID created",
+        "identities dict has 1 entry"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 35,
+      "category": "pis",
+      "description": "GlobalIdentityLedger.register_or_match() returns existing PID when best match score >= 0.60; does NOT create a duplicate identity",
+      "steps": [
+        "Unit test: register same person twice",
+        "Same PID returned both times",
+        "identities dict still has 1 entry"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 36,
+      "category": "pis",
+      "description": "GlobalIdentityLedger._update_identity() applies EMA (alpha=0.85) to deep_embedding and color histograms; re-normalizes embedding after blend",
+      "steps": [
+        "Unit test: known vectors",
+        "Blended embedding matches (0.85*old + 0.15*new) normalized",
+        "update_count increments"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 37,
+      "category": "pis",
+      "description": "GlobalIdentityLedger persists camera_seen_on set: after seeing person on camera-A then camera-B, cameras_seen_on == {'camera-A', 'camera-B'}",
+      "steps": [
+        "Unit test: two register_or_match calls from different cameras",
+        "cameras_seen_on has both camera IDs"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 38,
+      "category": "pis",
+      "description": "CoverageFairnessEngine.should_capture() returns allowed=False when identity.capture_count >= MAX_TOTAL_CAPTURES (20)",
+      "steps": [
+        "Unit test: identity.capture_count=20",
+        "allowed==False",
+        "reason contains 'max capture limit'"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 39,
+      "category": "pis",
+      "description": "CoverageFairnessEngine.should_capture() returns allowed=False for solo mode when solo capture count >= MAX_SOLO_CAPTURES (8)",
+      "steps": [
+        "Unit test: 8 solo captures recorded",
+        "allowed==False for capture_mode='solo'"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 40,
+      "category": "pis",
+      "description": "CoverageFairnessEngine.should_capture() returns allowed=False during adaptive cooldown: cooldown = 15 * (1 + 0.5 * count) seconds",
+      "steps": [
+        "Unit test: count=2, last_capture=5s ago",
+        "Cooldown=22.5s, allowed=False",
+        "After 23s, allowed=True"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 41,
+      "category": "pis",
+      "description": "CoverageFairnessEngine.should_capture() returns priority=1.0 (PRIORITY BOOST) for identity with capture_count < 50% of average",
+      "steps": [
+        "Unit test: avg=10, identity.count=4",
+        "priority==1.0",
+        "reason contains 'PRIORITY BOOST'"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 42,
+      "category": "pis",
+      "description": "CoverageFairnessEngine.get_priority_queue() returns PIDs sorted by priority descending; new persons (not in ledger) always get priority 1.0",
+      "steps": [
+        "Unit test: 3 PIDs with counts 0, 5, 15",
+        "Order: count=0 first, count=15 last"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 43,
+      "category": "pis",
+      "description": "CoverageFairnessEngine.compute_gini_coefficient() returns 0.0 for uniform distribution and 1.0 for single-person monopoly",
+      "steps": [
+        "Unit test: [5,5,5,5] -> 0.0",
+        "Unit test: [0,0,0,20] -> close to 1.0"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 44,
+      "category": "pis",
+      "description": "CoverageFairnessEngine.should_capture() returns priority=0.3 (low) for a group combination already captured (frozenset of PIDs already in group_combinations_captured)",
+      "steps": [
+        "Unit test: same duo captured twice",
+        "Second capture priority==0.3"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 45,
+      "category": "pis",
+      "description": "Full PIS integration: 10 simulated persons enter and leave frame randomly over 60 simulated seconds; final Gini coefficient <= 0.35",
+      "steps": [
+        "Integration test with mock signatures",
+        "Gini <= 0.35 at end"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 46,
+      "category": "orchestrator",
+      "description": "CaptureOrchestrator state machine transitions: SCANNING -> EVALUATING on person detection, EVALUATING -> FOCUSING on composition pass, FOCUSING -> CAPTURING on AF confirm, CAPTURING -> COOLDOWN, COOLDOWN -> SCANNING",
+      "steps": [
+        "Unit test: feed detection events in sequence",
+        "State transitions in correct order"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 47,
+      "category": "orchestrator",
+      "description": "ShutterTimingEngine.is_ready() returns WAIT_MOTION when centroid_velocity > 15px; WAIT_STABILITY when stable_frame_count < 5; WAIT_CLOSER when face_height < 80px; FIRE otherwise",
+      "steps": [
+        "Unit test each condition independently",
+        "Correct ShutterDecision enum returned per condition"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 48,
+      "category": "orchestrator",
+      "description": "Capture mode selector: returns SOLO for 1 person fill 0.15-0.60, DUO for 2 proximate, TRIO for 3, GROUP for 4+, CANDID for back-facing, INTERACTION for mutual-facing pair",
+      "steps": [
+        "Unit test each mode trigger condition",
+        "Correct CaptureMode returned"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 49,
+      "category": "orchestrator",
+      "description": "PTZ PID controller: given centroid error (ex, ey), outputs ONVIF velocity within [-0.5, 0.5]; dead zone 0.05 produces zero output; Kp=0.4, Ki=0.01, Kd=0.1",
+      "steps": [
+        "Unit test: error=0.03,0.03 -> velocity=0,0",
+        "error=0.5,0 -> velocity ~= 0.2,0"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 50,
+      "category": "orchestrator",
+      "description": "Auto-zoom for PTZ: compute_zoom_command() returns 0 when fill ratio within 5% of target 0.35; positive when fill < 0.30; negative when fill > 0.40",
+      "steps": [
+        "Unit test fill=0.25 -> zoom positive",
+        "fill=0.45 -> zoom negative",
+        "fill=0.34 -> zoom=0"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 51,
+      "category": "orchestrator",
+      "description": "Orchestrator integrates PIS: before capture decision, calls CoverageFairnessEngine.should_capture(PID, mode, group); skips capture if allowed=False",
+      "steps": [
+        "Integration test: identity at MAX_TOTAL_CAPTURES",
+        "No shutter trigger occurs",
+        "State returns to SCANNING"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 52,
+      "category": "orchestrator",
+      "description": "Orchestrator picks highest-priority PID from CoverageFairnessEngine.get_priority_queue() when multiple persons visible; camera frames/focuses on highest-priority subject",
+      "steps": [
+        "Integration test: 3 PIDs with counts 0,5,15",
+        "Camera targets PID with count=0"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 53,
+      "category": "orchestrator",
+      "description": "On successful capture, orchestrator records: identity.capture_count++, identity.last_capture_time=now, identity.capture_modes_used.add(mode), identity.group_combinations_captured.add(group_combo) for group shots",
+      "steps": [
+        "Integration test: capture duo shot",
+        "Both PIDs have capture_count=1",
+        "group_combinations_captured updated on both"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 54,
+      "category": "iqg",
+      "description": "Stage 1: blur_score() computes Laplacian variance; returns float; score < threshold means REJECT; threshold configurable (DSLR=120, mirrorless=80, PTZ=50)",
+      "steps": [
+        "Unit test: sharp test image -> score > 120",
+        "Blurred test image -> score < 50"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 55,
+      "category": "iqg",
+      "description": "Stage 2: face_presence() uses RetinaFace (InsightFace) to detect faces; REJECT if zero faces detected, or all faces have height < 60px, or all have det_score < 0.7",
+      "steps": [
+        "Unit test: no-face image -> REJECT",
+        "Face image with det_score=0.9 -> PASS"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 56,
+      "category": "iqg",
+      "description": "Stage 3: aesthetic_score() runs NIMA MobileNetV2 model and returns mean aesthetic score (0-10); REJECT if score < 4.5",
+      "steps": [
+        "Unit test: known high-quality portrait image -> score >= 4.5",
+        "Known poor image -> score < 4.5"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 57,
+      "category": "iqg",
+      "description": "Stage 4: smart_crop() detects faces via RetinaFace, positions face at nearest rule-of-thirds intersection, pads 15% around outermost face, never crops at neck/wrist/elbow joints, returns (x,y,w,h) crop box",
+      "steps": [
+        "Unit test: face at center",
+        "Crop shifts face to upper-third intersection"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 58,
+      "category": "iqg",
+      "description": "IQGPipeline.run() executes all 4 stages in sequence, short-circuits on first REJECT, returns IQGResult(passed=bool, stage=str, score=float, crop_box=tuple)",
+      "steps": [
+        "Integration test: blurry image",
+        "passed=False, stage='blur', pipeline stops at stage 1"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 59,
+      "category": "iqg",
+      "description": "IQGPipeline produces output crops in all 5 aspect ratios (4:5, 3:2, 1:1, 9:16, native) for passed images; each stored with a suffix in filename",
+      "steps": [
+        "Integration test: passing image",
+        "5 output files created",
+        "Each has correct pixel dimensions"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 60,
+      "category": "iqg",
+      "description": "IQGPipeline.run() is idempotent: running the same image twice produces identical IQGResult (no side effects, no DB writes inside)",
+      "steps": [
+        "Unit test: run same image twice",
+        "Both results == each other"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 61,
+      "category": "embedding",
+      "description": "FaceDetector (RetinaFace/InsightFace) detects all faces in an image and returns list of FaceDetection(bbox, landmarks_5pt, det_score) sorted by det_score descending",
+      "steps": [
+        "Unit test: 2-face image",
+        "2 FaceDetection objects returned",
+        "Sorted by det_score"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 62,
+      "category": "embedding",
+      "description": "FaceAligner applies affine transform using 5-point landmarks to produce a 112x112 aligned face chip, normalized to RGB float32 in [-1, 1]",
+      "steps": [
+        "Unit test with known landmarks",
+        "Output shape==(112,112,3)",
+        "dtype==float32"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 63,
+      "category": "embedding",
+      "description": "AuraFaceEmbedder loads AuraFace v1 (Apache 2.0) weights, runs on aligned face chip, returns L2-normalized 512-dim float32 vector; cosine similarity of same face >= 0.85",
+      "steps": [
+        "Unit test: same face twice",
+        "cosine_similarity >= 0.85",
+        "different face < 0.55"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 64,
+      "category": "embedding",
+      "description": "Embedding quality filter: rejects face if det_score < 0.80, face height < 60px, yaw_angle > 45 degrees, or occlusion score above threshold",
+      "steps": [
+        "Unit test: sunglasses face -> rejected",
+        "Extreme profile (yaw=60) -> rejected",
+        "Frontal clear face -> accepted"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 65,
+      "category": "embedding",
+      "description": "FaceEmbeddingPipeline.process(image_id) loads image from storage, runs detect->align->embed for each qualified face, returns list of EmbeddingResult(face_index, embedding, bbox, landmarks, det_score, yaw_angle)",
+      "steps": [
+        "Integration test: 3-face image",
+        "3 EmbeddingResults returned"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 66,
+      "category": "embedding",
+      "description": "EmbeddingResult is persisted to face_embeddings table with correct schema (id, image_id, face_index, embedding VECTOR(512), bbox jsonb, det_score, yaw_angle, created_at)",
+      "steps": [
+        "Integration test: call store_embeddings()",
+        "SELECT from face_embeddings returns row",
+        "embedding column is VECTOR(512)"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 67,
+      "category": "embedding",
+      "description": "HNSW index on face_embeddings.embedding created at migration time: CREATE INDEX ... USING hnsw (embedding vector_cosine_ops) WITH (m=16, ef_construction=200)",
+      "steps": [
+        "psql: \\d face_embeddings",
+        "hnsw index present on embedding column"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 68,
+      "category": "clustering",
+      "description": "batch_cluster(event_id) fetches all embeddings for an event, runs DBSCAN(eps=0.45, min_samples=2, metric=cosine), assigns cluster UUIDs as face_clusters rows, updates face_embeddings.cluster_id for all members",
+      "steps": [
+        "Integration test: 20 embeddings from 5 distinct people",
+        "5 face_clusters rows created",
+        "Each embedding has correct cluster_id"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 69,
+      "category": "clustering",
+      "description": "assign_to_cluster(new_embedding, event_id) computes centroid of each existing cluster, finds best cosine similarity; if >= 0.55 assigns to that cluster; else creates new cluster",
+      "steps": [
+        "Unit test: embedding from known person",
+        "Returns existing cluster_id",
+        "New person returns new cluster_id"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 70,
+      "category": "clustering",
+      "description": "Cluster centroid updates after assign_to_cluster: centroid = mean of all member embeddings, re-normalized; stored in face_clusters.centroid VECTOR(512)",
+      "steps": [
+        "Unit test: add 3 embeddings to cluster",
+        "centroid == mean(emb1, emb2, emb3) normalized",
+        "Stored in DB"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 71,
+      "category": "clustering",
+      "description": "Celery task run_full_clustering(event_id) is idempotent: running twice produces same cluster assignments (no duplicate clusters created)",
+      "steps": [
+        "Integration test: run task twice on same data",
+        "face_clusters count unchanged after second run"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 72,
+      "category": "clustering",
+      "description": "face_clusters.representative_face_id points to the embedding with highest det_score within the cluster (best quality face)",
+      "steps": [
+        "Integration test: cluster with 5 faces, mixed det_scores",
+        "representative_face_id matches the row with max det_score"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 73,
+      "category": "api",
+      "description": "POST /api/v1/events creates event; requires name, venue, start_time; returns 201 with event UUID; rejects missing fields with 422 and field-level errors",
+      "steps": [
+        "curl POST with valid body -> 201 + UUID",
+        "Missing name -> 422"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 74,
+      "category": "api",
+      "description": "GET /api/v1/events/{id} returns event details; returns 404 with JSON error when event does not exist",
+      "steps": [
+        "GET existing event -> 200 with event JSON",
+        "GET nonexistent UUID -> 404"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 75,
+      "category": "api",
+      "description": "POST /api/v1/events/{id}/cameras registers a camera (type, model, connection_type, location_label, config); returns 201 with camera UUID",
+      "steps": [
+        "POST valid camera -> 201",
+        "POST to nonexistent event -> 404"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 76,
+      "category": "api",
+      "description": "POST /api/v1/cameras/{id}/start starts auto-capture on the camera; returns 200; triggers DetectionEngine and CaptureOrchestrator startup in background thread",
+      "steps": [
+        "POST start -> 200",
+        "Camera status becomes 'capturing'",
+        "Second start returns 409 (already running)"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 77,
+      "category": "api",
+      "description": "POST /api/v1/cameras/{id}/stop stops auto-capture; returns 200; camera status returns to 'connected'",
+      "steps": [
+        "POST stop after start -> 200",
+        "Camera status == 'connected'"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 78,
+      "category": "api",
+      "description": "GET /api/v1/events/{id}/images returns paginated list of IQG-passed images (page, limit params); response includes image_id, capture_mode, thumbnail_url, captured_at",
+      "steps": [
+        "GET images page=1 limit=10 -> 200 with items array",
+        "items[0] has required fields",
+        "next_page present when more images exist"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 79,
+      "category": "api",
+      "description": "GET /api/v1/images/{id}/download returns a presigned MinIO URL (or stream) for the full-resolution image; returns 404 for unknown image_id",
+      "steps": [
+        "GET valid image -> 200 or redirect to signed URL",
+        "GET unknown -> 404"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 80,
+      "category": "api",
+      "description": "GET /api/v1/events/{id}/stats returns: total_images, images_passed_iqg, total_faces_embedded, total_pids_identified, gini_coefficient, per_camera_counts",
+      "steps": [
+        "GET stats -> 200 with all 6 fields",
+        "gini_coefficient is float 0-1"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 81,
+      "category": "api",
+      "description": "All API endpoints require JWT Bearer auth; missing/invalid/expired tokens return 401; valid token decodes user_id and role",
+      "steps": [
+        "GET without token -> 401",
+        "GET with expired token -> 401",
+        "GET with valid token -> 200"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 82,
+      "category": "api",
+      "description": "POST /api/v1/auth/login accepts email + password; returns access_token (15min JWT) + refresh_token (7d); invalid credentials return 401",
+      "steps": [
+        "POST valid creds -> 200 with tokens",
+        "POST wrong password -> 401"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 83,
+      "category": "api",
+      "description": "GET /api/v1/cameras/{id}/status returns camera_type, status, fps, capture_count, last_capture_time, current_pid_count, gini_coefficient; updates in real-time",
+      "steps": [
+        "GET camera status while capturing -> 200 with live metrics"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 84,
+      "category": "api",
+      "description": "FastAPI /metrics endpoint exposes Prometheus metrics: api_requests_total, api_latency_seconds, captures_total, iqg_pass_rate, embedding_queue_depth",
+      "steps": [
+        "curl /metrics -> 200 with metric lines",
+        "All 5 metric names present"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 85,
+      "category": "portal",
+      "description": "POST /api/v1/events/{id}/match accepts multipart selfie upload; validates it is an image file <= 10MB; returns 400 for non-image or oversized files",
+      "steps": [
+        "POST valid JPEG -> proceeds to matching",
+        "POST PDF -> 400",
+        "POST 15MB file -> 400"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 86,
+      "category": "portal",
+      "description": "POST /api/v1/events/{id}/match runs face detection on uploaded selfie; returns 422 with 'no_face_detected' if no face found or det_score < 0.7",
+      "steps": [
+        "POST selfie with no face -> 422 no_face_detected",
+        "Blurry selfie -> 422"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 87,
+      "category": "portal",
+      "description": "POST /api/v1/events/{id}/match generates AuraFace embedding from selfie, searches face_embeddings with HNSW cosine ANN (threshold=0.55, top_k=500), returns matches sorted by similarity descending",
+      "steps": [
+        "POST selfie for known person in test event",
+        "Matching images returned",
+        "similarity values between 0.55 and 1.0"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 88,
+      "category": "portal",
+      "description": "Match response includes for each match: image_id, similarity, thumbnail_url, download_url, capture_mode, captured_at; total_matches and processing_time_ms at root level",
+      "steps": [
+        "Verify response schema against spec",
+        "All 7 fields present per match item"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 89,
+      "category": "portal",
+      "description": "POST /api/v1/events/{id}/register saves display_name, selfie path, selfie_embedding, matched_cluster_id for a portal user; returns user UUID",
+      "steps": [
+        "POST register -> 201 with user_id",
+        "SELECT from portal_users shows row",
+        "matched_cluster_id is not null"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 90,
+      "category": "portal",
+      "description": "Portal web app: landing page shows event name, QR code description, and 'Find My Photos' call-to-action button; loads without JS errors",
+      "steps": [
+        "Open portal in browser",
+        "Event name visible",
+        "Button present",
+        "No console errors"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 91,
+      "category": "portal",
+      "description": "Portal web app: selfie capture screen uses MediaDevices.getUserMedia (front camera preferred); captured frame previewed before submission",
+      "steps": [
+        "Click capture button",
+        "Camera permission requested",
+        "Preview shows front camera feed"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 92,
+      "category": "portal",
+      "description": "Portal web app: after successful match, shows masonry gallery of matched photos with similarity badge, download button per photo; empty state if no matches",
+      "steps": [
+        "Successful match -> gallery renders",
+        "Each photo has download button",
+        "Zero matches -> empty state message"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 93,
+      "category": "portal",
+      "description": "Portal web app: download button generates presigned URL and triggers browser download of full-resolution image",
+      "steps": [
+        "Click download -> file download starts",
+        "Downloaded file is valid JPEG"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 94,
+      "category": "portal",
+      "description": "Portal consent flow: before selfie capture, user must check consent checkbox; submit button disabled until checked; consent timestamp stored in portal_users",
+      "steps": [
+        "Uncheck consent -> submit disabled",
+        "Check consent -> submit enabled"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 95,
+      "category": "data",
+      "description": "Celery task process_captured_image(image_id) runs IQG pipeline; on REJECT writes iqg_passed=False + rejection_reason to DB; on PASS writes iqg_passed=True + all scores",
+      "steps": [
+        "Integration test: enqueue task for blurry image",
+        "DB row updated with iqg_passed=False",
+        "stage='blur'"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 96,
+      "category": "data",
+      "description": "Celery task process_captured_image on IQG pass runs FaceEmbeddingPipeline.process(); stores all qualified EmbeddingResults; then calls assign_to_cluster() per embedding",
+      "steps": [
+        "Integration test: enqueue task for clear face image",
+        "face_embeddings row created",
+        "cluster assigned"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 97,
+      "category": "data",
+      "description": "Celery task process_captured_image has max_retries=3; retries with exponential backoff on transient errors (DB connection lost, MinIO timeout); raises on permanent errors",
+      "steps": [
+        "Unit test: simulate DB failure x2 then success",
+        "Task succeeds on 3rd attempt"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 98,
+      "category": "data",
+      "description": "Images are uploaded to MinIO with key pattern: {event_id}/{camera_id}/{YYYYMMDD}/{capture_mode}/{uuid}.jpg; thumbnails at same path with _thumb suffix at 640px longest edge",
+      "steps": [
+        "Integration test: process image",
+        "MinIO key matches pattern",
+        "Thumbnail exists at _thumb path"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 99,
+      "category": "data",
+      "description": "Celery beat schedules run_full_clustering(event_id) every 5 minutes for active events; does not schedule for completed/archived events",
+      "steps": [
+        "Check Celery beat schedule config",
+        "Active event task present",
+        "Archived event task absent"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 100,
+      "category": "data",
+      "description": "Edge node local buffer: captured images saved to /capture-buffer/{camera_id}/{uuid}.jpg; uploader thread picks files from buffer and enqueues process_captured_image task; removes local file on successful enqueue",
+      "steps": [
+        "Integration test: create test image in buffer",
+        "Task enqueued to Celery",
+        "Local file deleted"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 101,
+      "category": "integration",
+      "description": "End-to-end smoke test: start full stack via init.sh, inject 5 test frames with a known person, verify >= 1 image appears in /api/v1/events/{id}/images after 30 seconds",
+      "steps": [
+        "Run e2e/test_full_pipeline.py",
+        "At least 1 image in gallery",
+        "iqg_passed=True"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 102,
+      "category": "integration",
+      "description": "Selfie match e2e: inject 10 frames of person A and 10 of person B; register person A via /match selfie; verify only person A's images are in results (0 person B images)",
+      "steps": [
+        "Run e2e/test_selfie_match.py",
+        "All returned images contain person A",
+        "No person B images in results"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 103,
+      "category": "integration",
+      "description": "Re-ID consistency e2e: person A exits frame for 10 seconds then re-enters; verify PID is the same before and after re-entry; capture_count accumulates correctly",
+      "steps": [
+        "Run e2e/test_reid_persistence.py",
+        "Same PID before and after",
+        "capture_count does not reset"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 104,
+      "category": "integration",
+      "description": "Coverage fairness e2e: inject 50 frames with 5 distinct people appearing at equal frequency; final Gini coefficient from /api/v1/events/{id}/stats <= 0.35",
+      "steps": [
+        "Run e2e/test_coverage_fairness.py",
+        "gini_coefficient <= 0.35"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 105,
+      "category": "integration",
+      "description": "Performance: detection engine achieves >= 15 FPS on a 1280x720 video feed with YOLOv8n on target hardware (NVIDIA RTX 3060 or equivalent)",
+      "steps": [
+        "Run perf/benchmark_detection.py",
+        "avg_fps >= 15.0"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 106,
+      "category": "integration",
+      "description": "Performance: selfie match (ANN search) completes in <= 3 seconds p95 for an event with 30,000 face embeddings",
+      "steps": [
+        "Run perf/benchmark_selfie_match.py with 30k embeddings",
+        "p95 latency <= 3000ms"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    },
+    {
+      "id": 107,
+      "category": "integration",
+      "description": "All unit tests pass with pytest: edge-node (camera, detection, pis, orchestrator, iqg) and cloud-api (embedding, clustering, api) test suites show 0 failures",
+      "steps": [
+        "cd edge-node && pytest",
+        "0 failures",
+        "cd cloud-api && pytest",
+        "0 failures"
+      ],
+      "dependencies": [],
+      "attempts": 0,
+      "failureReasons": [],
+      "passes": false,
+      "sessionCompleted": null
+    }
+  ]
+}
