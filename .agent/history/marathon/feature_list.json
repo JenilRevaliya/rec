@@ -61,8 +61,8 @@
       "dependencies": [],
       "attempts": 0,
       "failureReasons": [],
-      "passes": false,
-      "sessionCompleted": null
+      "passes": true,
+      "sessionCompleted": "2026-07-30T07:36:48.276Z"
     },
     {
       "id": 5,

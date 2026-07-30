@@ -154,6 +154,22 @@ services:
       - miniodata:/data
     restart: unless-stopped
 
+  minio-setup:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      mc alias set local http://minio:9000 $${MINIO_ACCESS_KEY} $${MINIO_SECRET_KEY};
+      mc mb local/$${MINIO_BUCKET} || true;
+      mc anonymous set public local/$${MINIO_BUCKET} || true;
+      "
+    environment:
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_BUCKET=${MINIO_BUCKET:-rec-images}
+
   # ─────────────────────────────────────────────
   # USER PORTAL
   # ─────────────────────────────────────────────
