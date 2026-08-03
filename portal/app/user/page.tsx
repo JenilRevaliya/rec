@@ -18,7 +18,9 @@ function UserPortalContent() {
   const [authenticated, setAuthenticated] = useState(false);
   const [webcamActive, setWebcamActive] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [matchedPhotos, setMatchedPhotos] = useState<any[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   
   useEffect(() => {
     setIsClient(true);
@@ -31,7 +33,7 @@ function UserPortalContent() {
     
     // Validate private link token if present
     if (token) {
-      fetch(`http://localhost:8001/links/validate/${token}`)
+      fetch(`${window.location.protocol}//${window.location.hostname}:8001/links/validate/${token}`)
         .then(res => res.json())
         .then(data => {
           if (data.valid) {
@@ -66,20 +68,50 @@ function UserPortalContent() {
     setLoggedIn(true);
   };
 
-  const [matchedPhotos, setMatchedPhotos] = useState<any[]>([]);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
   const uniqueEventsCount = new Set(matchedPhotos.map(p => p.event)).size;
 
   const startWebcam = async () => {
-    setWebcamActive(true);
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("HTTPS required for live webcam");
+      }
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      setWebcamActive(true);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
     } catch (err) {
       console.error("Webcam error", err);
+      alert("Browser blocked live camera (likely because it's not HTTPS). Please use the 'Take Selfie (Mobile Fix)' button instead.");
+    }
+  };
+
+  const handleNativeCameraCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setAnalyzing(true);
+      const file = e.target.files[0];
+      const formData = new FormData();
+      formData.append("file", file, "webcam.jpg");
+      
+      try {
+        const res = await fetch(`${window.location.protocol}//${window.location.hostname}:8001/match`, {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+        if (data.matches) {
+          setMatchedPhotos(data.matches);
+          if (token) {
+            fetch(`${window.location.protocol}//${window.location.hostname}:8001/links/consume/${token}`, { method: "POST" });
+          }
+        }
+      } catch (err) {
+        console.error("Match failed", err);
+        alert("Could not connect to AI Engine.");
+      } finally {
+        setAnalyzing(false);
+        setAuthenticated(true);
+      }
     }
   };
 
@@ -97,7 +129,7 @@ function UserPortalContent() {
         formData.append("file", blob, "webcam.jpg");
         
         try {
-          const res = await fetch("http://localhost:8001/match", {
+          const res = await fetch(`${window.location.protocol}//${window.location.hostname}:8001/match`, {
             method: "POST",
             body: formData,
           });
@@ -106,7 +138,7 @@ function UserPortalContent() {
             setMatchedPhotos(data.matches);
             // Consume token if present
             if (token) {
-              fetch(`http://localhost:8001/links/consume/${token}`, { method: "POST" });
+              fetch(`${window.location.protocol}//${window.location.hostname}:8001/links/consume/${token}`, { method: "POST" });
             }
           }
         } catch (err) {
@@ -148,12 +180,27 @@ function UserPortalContent() {
               <p className="font-bold text-gray-600 mb-8">Take a quick selfie to unlock and instantly find every photo of you across all events.</p>
               
               {!webcamActive ? (
-            <button 
-              onClick={startWebcam}
-              className="w-full bg-neo-yellow font-bold py-6 border-4 border-black hover:-translate-y-1 hover:-translate-x-1 hover:shadow-neo transition-all flex items-center justify-center text-xl uppercase"
-            >
-              <Camera className="mr-3 w-6 h-6" /> Open Camera
-            </button>
+            <div className="space-y-4">
+              <button 
+                onClick={startWebcam}
+                className="w-full bg-neo-yellow font-bold py-6 border-4 border-black hover:-translate-y-1 hover:-translate-x-1 hover:shadow-neo transition-all flex items-center justify-center text-xl uppercase"
+              >
+                <Camera className="mr-3 w-6 h-6" /> Open Live Camera
+              </button>
+              
+              <div className="relative">
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  capture="user"
+                  onChange={handleNativeCameraCapture}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                />
+                <button className="w-full bg-white font-bold py-4 border-4 border-black hover:-translate-y-1 hover:-translate-x-1 hover:shadow-neo transition-all flex items-center justify-center uppercase">
+                  {analyzing ? 'Scanning Face Data...' : 'Take Selfie (Mobile Fix)'}
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="space-y-4">
               <div className="border-4 border-black overflow-hidden bg-black max-w-sm mx-auto">

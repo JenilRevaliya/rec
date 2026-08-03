@@ -14,8 +14,8 @@ echo -e "${CYAN}${BOLD}"
 cat << "EOF"
     ____  ___________ 
    / __ \/ ____/ ___/ 
-  / /_/ / __/ / /__   
- / _, _/ /___/ /___/  
+  / /_/ / __/ / /    
+ / _, _/ /___/ /___  
 /_/ |_/_____/\____/   
 EOF
 echo -e "${NC}"
@@ -99,9 +99,24 @@ echo -e "${MAGENTA}${BOLD}"
 echo "=========================================================="
 echo " ⚡ SYSTEM FULLY OPERATIONAL - ALL SYSTEMS NOMINAL ⚡ "
 echo "=========================================================="
-echo -e "${GREEN}  [CTRL] Admin Portal:        http://localhost:3000/admin  "
+
+# Automatically detect Local Network IP
+if command -v ip >/dev/null 2>&1; then
+    LAN_IP=$(ip route get 1.1.1.1 | awk -F"src " 'NR==1{split($2,a," ");print a[1]}')
+else
+    LAN_IP=$(ifconfig | grep "inet " | grep -Fv 127.0.0.1 | awk '{print $2}' | head -n 1)
+fi
+
+echo -e "${GREEN} LOCAL (This Computer):"
+echo "  [CTRL] Admin Portal:        http://localhost:3000/admin"
 echo "  [STUDIO] Photographer:      http://localhost:3000/photographer"
-echo "  [CLIENT] User Gallery:      http://localhost:3000/user   ${NC}"
+echo "  [CLIENT] User Gallery:      http://localhost:3000/user"
+echo ""
+echo -e "${CYAN} NETWORK (Phones & Tablets on Wi-Fi):"
+echo "  [CTRL] Admin Portal:        http://${LAN_IP}:3000/admin"
+echo "  [STUDIO] Photographer:      http://${LAN_IP}:3000/photographer"
+echo "  [CLIENT] User Gallery:      http://${LAN_IP}:3000/user${NC}"
+
 echo -e "${MAGENTA}==========================================================${NC}"
 echo -e "${CYAN}Streaming AI Logs... (Press Ctrl+C to safely shutdown everything)${NC}\n"
 

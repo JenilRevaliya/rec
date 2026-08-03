@@ -9,6 +9,8 @@ from pydantic import BaseModel
 import uuid
 import os
 import json
+import base64
+import socket
 
 from sqlalchemy import create_engine, Column, Integer, String, JSON
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -17,7 +19,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
-app = FastAPI(title="REC Local Lab API")
+app = FastAPI(title="REC Cloud API", description="Simulated Cloud Infrastructure for REC")
 
 limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
@@ -69,6 +71,17 @@ class Photo(Base):
     faces_detected = Column(Integer)
 
 Base.metadata.create_all(bind=engine)
+
+def auto_migrate():
+    from sqlalchemy import text
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE rec_events ADD COLUMN is_private INTEGER DEFAULT 0;"))
+            conn.commit()
+    except Exception:
+        pass # Column already exists or table doesn't exist yet
+
+auto_migrate()
 
 def seed_db():
     db = SessionLocal()
@@ -190,12 +203,40 @@ def validate_link(token: str):
     db.close()
     return {"valid": True, "event_id": link.event_id, "opens": link.opens, "max_opens": link.max_opens}
 
+@app.get("/network-ip")
+def get_network_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(('10.255.255.255', 1))
+        IP = s.getsockname()[0]
+    except Exception:
+        IP = '127.0.0.1'
+    finally:
+        s.close()
+    return {"ip": IP}
+
 @app.get("/photos/{event_id}")
-def get_photos(event_id: str):
+def get_photos(request: Request, event_id: str):
     db = SessionLocal()
     photos = db.query(Photo).filter(Photo.event_id == event_id).order_by(Photo.id.desc()).all()
     db.close()
-    return [{"id": p.id, "url": p.url, "faces_detected": p.faces_detected} for p in photos]
+    base = str(request.base_url).rstrip("/")
+    return [{"id": p.id, "url": f"{base}/static/{p.id}.jpg", "faces_detected": p.faces_detected} for p in photos]
+
+@app.delete("/photos/{photo_id}")
+def delete_photo(photo_id: str):
+    db = SessionLocal()
+    photo = db.query(Photo).filter(Photo.id == photo_id).first()
+    if photo:
+        db.delete(photo)
+        db.commit()
+        # also delete file if exists
+        try:
+            os.remove(f"static/{photo_id}.jpg")
+        except:
+            pass
+    db.close()
+    return {"status": "deleted"}
 
 @app.post("/upload")
 @limiter.limit("50/minute")
@@ -232,11 +273,12 @@ async def upload_photo(request: Request, file: UploadFile = File(...), event: st
     if not existing_event:
         db.add(Event(id=event, name=f"Event {event}", photographer_id=photographer))
         
+    base_url = str(request.base_url).rstrip("/")
     photo = Photo(
         id=photo_id,
         event_id=event,
         photographer_id=photographer,
-        url=f"http://localhost:8001/static/{photo_id}.jpg",
+        url=f"{base_url}/static/{photo_id}.jpg",
         faces=face_data,
         faces_detected=len(faces)
     )
@@ -247,7 +289,7 @@ async def upload_photo(request: Request, file: UploadFile = File(...), event: st
     return {
         "photo_id": photo_id,
         "faces_detected": len(faces),
-        "url": f"http://localhost:8001/static/{photo_id}.jpg"
+        "url": f"{base_url}/static/{photo_id}.jpg"
     }
 
 @app.post("/match")
@@ -266,6 +308,7 @@ async def match_webcam(request: Request, file: UploadFile = File(...)):
     
     db = SessionLocal()
     all_photos = db.query(Photo).all()
+    base_url = str(request.base_url).rstrip("/")
     
     for p in all_photos:
         matched = False
@@ -285,7 +328,7 @@ async def match_webcam(request: Request, file: UploadFile = File(...)):
                 "score": float(best_score),
                 "event": p.event_id,
                 "photographer": p.photographer_id,
-                "url": p.url
+                "url": f"{base_url}/static/{p.id}.jpg"
             })
             
     db.close()

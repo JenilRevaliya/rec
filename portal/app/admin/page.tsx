@@ -46,15 +46,15 @@ export default function AdminPortal() {
   };
 
   const fetchData = async () => {
-    const statsRes = await fetch("http://localhost:8001/admin/stats");
+    const statsRes = await fetch(`${window.location.protocol}//${window.location.hostname}:8001/admin/stats`);
     const statsData = await statsRes.json();
     setDbStats(prev => ({ ...prev, users: statsData.users, images: statsData.photos, storage: statsData.storage || "0 KB" }));
     
-    const usersRes = await fetch("http://localhost:8001/admin/users");
+    const usersRes = await fetch(`${window.location.protocol}//${window.location.hostname}:8001/admin/users`);
     const usersData = await usersRes.json();
     setUsers(usersData);
     
-    const eventsRes = await fetch("http://localhost:8001/admin/events");
+    const eventsRes = await fetch(`${window.location.protocol}//${window.location.hostname}:8001/admin/events`);
     const eventsData = await eventsRes.json();
     setEvents(eventsData);
   };
@@ -65,7 +65,7 @@ export default function AdminPortal() {
     const pPassword = prompt("Enter new photographer password:");
     if (!pPassword) return;
     
-    await fetch("http://localhost:8001/admin/users", {
+    await fetch(`${window.location.protocol}//${window.location.hostname}:8001/admin/users`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username: pUsername, password: pPassword, role: "photographer" })
@@ -200,8 +200,8 @@ export default function AdminPortal() {
                     <td className="p-4 border-4 border-black font-bold">{evt.name}</td>
                     <td className="p-4 border-4 border-black font-bold">{evt.photographer_id}</td>
                     <td className="p-4 border-4 border-black font-bold text-neo-blue">
-                      <a href={`http://localhost:3000/user?event=${evt.id}`} target="_blank" rel="noreferrer">
-                        http://localhost:3000/user?event={evt.id}
+                      <a href={`${window.location.protocol}//${window.location.hostname}:3000/user?event=${evt.id}`} target="_blank" rel="noreferrer">
+                        {`${window.location.protocol}//${window.location.hostname}:3000/user?event=${evt.id}`}
                       </a>
                     </td>
                   </tr>

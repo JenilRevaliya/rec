@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Upload & Manage — REC</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #050505; --surface: #0a0a0a; --surface2: #111;
+      --border: #1e1e1e; --accent: #ffffff; --text: #e0e0e0;
+      --muted: #666; --red: #ff3333; --green: #33ff33;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    
+    /* Header */
+    .header {
+      height: 48px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 16px; background: var(--surface); z-index: 10;
+    }
+    .header-left, .header-right { display: flex; align-items: center; gap: 16px; }
+    .brand { font-size: 13px; font-weight: 700; letter-spacing: .05em; color: var(--accent); }
+    .badge { font-size: 10px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface2); }
+    .nav-link { color: var(--muted); text-decoration: none; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; transition: color .2s; }
+    .nav-link:hover { color: var(--accent); }
+    
+    /* Main Layout */
+    .layout { display: flex; flex: 1; overflow: hidden; }
+    
+    /* Sidebar (Upload Area) */
+    .sidebar {
+      width: 350px; background: var(--surface); border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; padding: 20px; gap: 20px;
+    }
+    .upload-box {
+      border: 2px dashed var(--border); border-radius: 8px; padding: 40px 20px;
+      text-align: center; cursor: pointer; transition: all .2s;
+      display: flex; flex-direction: column; align-items: center; gap: 12px;
+    }
+    .upload-box:hover { border-color: var(--muted); background: var(--surface2); }
+    .upload-box.dragover { border-color: var(--accent); background: #1a1a1a; }
+    .upload-icon { color: var(--muted); margin-bottom: 5px; }
+    .upload-text { font-size: 12px; font-weight: 500; }
+    .upload-sub { font-size: 10px; color: var(--muted); }
+    input[type="file"] { display: none; }
+    
+    .upload-queue { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    .q-item {
+      display: grid; grid-template-columns: 50px 1fr auto; gap: 10px; align-items: center; padding: 10px;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; font-size: 11px;
+    }
+    .q-thumb { width: 50px; height: 50px; object-fit: cover; border-radius: 4px; border: 1px solid var(--border); }
+    .q-progress { width: 100px; height: 4px; background: #000; border-radius: 2px; overflow: hidden; }
+    .q-bar { height: 100%; background: var(--accent); width: 0%; transition: width .2s; }
+    .q-status { font-size: 10px; color: var(--muted); text-align: right; margin-bottom: 4px; }
+    .q-success { color: var(--green); }
+    .q-error { color: var(--red); }
+    
+    /* Main Gallery */
+    .gallery-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .gallery-header { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .gallery-title { font-size: 14px; font-weight: 600; }
+    .gallery-actions { display: flex; gap: 10px; }
+    .btn { background: var(--surface2); color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: 4px; font-size: 11px; cursor: pointer; font-family: inherit; font-weight: 500; transition: all .2s; }
+    .btn:hover { background: #1a1a1a; border-color: var(--muted); }
+    
+    .gallery-grid {
+      flex: 1; overflow-y: auto; padding: 24px;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; align-content: start;
+    }
+    .photo-card {
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+      position: relative; group; display: flex; flex-direction: column;
+    }
+    .photo-img {
+      width: 100%; aspect-ratio: 4/3; object-fit: cover; cursor: zoom-in;
+      transition: transform .3s;
+    }
+    .photo-card:hover .photo-img { transform: scale(1.02); }
+    .photo-meta { padding: 10px; display: flex; justify-content: space-between; align-items: center; background: var(--surface2); border-top: 1px solid var(--border); }
+    .photo-id { font-size: 10px; color: var(--muted); font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
+    .photo-faces { font-size: 10px; background: #000; padding: 2px 6px; border-radius: 4px; }
+    
+    .delete-btn {
+      position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.7); color: white;
+      border: 1px solid rgba(255,51,51,0.5); border-radius: 4px; padding: 4px 8px; font-size: 10px;
+      cursor: pointer; opacity: 0; transition: all .2s; backdrop-filter: blur(4px);
+    }
+    .delete-btn:hover { background: rgba(255,51,51,0.9); border-color: var(--red); }
+    .photo-card:hover .delete-btn { opacity: 1; }
+    
+    /* Modal for Image Enlarge */
+    .modal {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 100;
+      align-items: center; justify-content: center; backdrop-filter: blur(5px);
+    }
+    .modal.active { display: flex; }
+    .modal-img { max-width: 90vw; max-height: 90vh; border: 1px solid #333; border-radius: 4px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+    .modal-close { position: absolute; top: 20px; right: 20px; background: none; border: none; color: white; font-size: 30px; cursor: pointer; }
+    
+    .empty-state { grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-left">
+      <div class="brand">REC STUDIO</div>
+      <div class="badge">{{EVENT_ID}}</div>
+      <div class="badge" style="color:var(--muted)">{{USERNAME}}</div>
+    </div>
+    <div class="header-right">
+      <a href="/select-mode" class="nav-link">← Change Mode</a>
+      <a href="/setup" class="nav-link">Switch Event</a>
+      <a href="/logout" class="nav-link" style="color: var(--red);">Sign Out</a>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="sidebar">
+      <div style="font-size: 14px; font-weight: 600;">Manual Upload</div>
+      <div style="font-size: 11px; color: var(--muted); margin-top: -15px;">Upload batch photos to the cloud</div>
+      
+      <div class="upload-box" id="drop-zone">
+        <div class="upload-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+        </div>
+        <div class="upload-text">Drag & drop files or click to browse</div>
+        <div class="upload-sub">JPEG/PNG only</div>
+        <input type="file" id="file-input" multiple accept="image/jpeg,image/png" />
+      </div>
+      
+      <div style="font-size: 12px; font-weight: 600; margin-top: 10px;">Upload Queue</div>
+      <div class="upload-queue" id="queue-container">
+        <!-- Queue items will appear here -->
+      </div>
+    </div>
+    
+    <div class="gallery-container">
+      <div class="gallery-header">
+        <div class="gallery-title">Cloud Gallery</div>
+        <div class="gallery-actions">
+          <button class="btn" id="refresh-btn">↻ Refresh</button>
+        </div>
+      </div>
+      
+      <div class="gallery-grid" id="gallery">
+        <div class="empty-state">Loading photos...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal" id="img-modal">
+    <button class="modal-close" id="modal-close">×</button>
+    <img src="" class="modal-img" id="modal-img" />
+  </div>
+
+  <script>
+    const CLOUD_API = "{{CLOUD_API}}";
+    const EVENT_ID = "{{EVENT_ID}}";
+    const USERNAME = "{{USERNAME}}";
+    
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const queueContainer = document.getElementById('queue-container');
+    const gallery = document.getElementById('gallery');
+    const refreshBtn = document.getElementById('refresh-btn');
+    
+    // Modal Logic
+    const modal = document.getElementById('img-modal');
+    const modalImg = document.getElementById('modal-img');
+    const modalClose = document.getElementById('modal-close');
+    
+    const openModal = (url) => { modalImg.src = url; modal.classList.add('active'); };
+    modalClose.onclick = () => modal.classList.remove('active');
+    modal.onclick = (e) => { if(e.target === modal) modal.classList.remove('active'); };
+
+    // Fetch Gallery
+    async function loadGallery() {
+      gallery.innerHTML = '<div class="empty-state">Loading...</div>';
+      try {
+        const res = await fetch(`${CLOUD_API}/photos/${EVENT_ID}`);
+        if (!res.ok) throw new Error('Failed to fetch');
+        const photos = await res.json();
+        
+        if (photos.length === 0) {
+          gallery.innerHTML = '<div class="empty-state">No photos in cloud for this event.</div>';
+          return;
+        }
+        
+        gallery.innerHTML = '';
+        photos.forEach(p => {
+          const card = document.createElement('div');
+          card.className = 'photo-card';
+          card.innerHTML = `
+            <button class="delete-btn" data-id="${p.id}">Delete</button>
+            <div style="overflow: hidden; cursor: zoom-in;" onclick="openModal('${p.url}')">
+              <img src="${p.url}" class="photo-img" loading="lazy" />
+            </div>
+            <div class="photo-meta">
+              <span class="photo-id">${p.id}</span>
+              <span class="photo-faces" style="display:flex; align-items:center; gap:4px;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                ${p.faces_detected}
+              </span>
+            </div>
+          `;
+          
+          card.querySelector('.delete-btn').addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (confirm('Permanently delete this photo from cloud?')) {
+              try {
+                await fetch(`${CLOUD_API}/photos/${p.id}`, { method: 'DELETE' });
+                loadGallery();
+              } catch(err) { alert('Delete failed'); }
+            }
+          });
+          
+          gallery.appendChild(card);
+        });
+      } catch (err) {
+        gallery.innerHTML = '<div class="empty-state">Error loading gallery. Check connection.</div>';
+      }
+    }
+
+    refreshBtn.addEventListener('click', loadGallery);
+    loadGallery();
+
+    // Upload Logic
+    dropZone.addEventListener('click', () => fileInput.click());
+    
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      if (e.dataTransfer.files.length > 0) handleFiles(e.dataTransfer.files);
+    });
+    
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length > 0) handleFiles(fileInput.files);
+      fileInput.value = '';
+    });
+
+    async function handleFiles(files) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file.type.startsWith('image/')) continue;
+        uploadFile(file);
+      }
+    }
+
+    async function uploadFile(file) {
+      const id = Math.random().toString(36).substring(7);
+      const thumbUrl = URL.createObjectURL(file);
+      const qItem = document.createElement('div');
+      qItem.className = 'q-item';
+      qItem.innerHTML = `
+        <img src="${thumbUrl}" class="q-thumb" />
+        <div style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:10px;">${file.name}</div>
+        <div style="display:flex; flex-direction:column; align-items:flex-end;">
+          <div class="q-status" id="status-${id}">Uploading...</div>
+          <div class="q-progress"><div class="q-bar" id="bar-${id}"></div></div>
+        </div>
+      `;
+      queueContainer.prepend(qItem);
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('event', EVENT_ID);
+      formData.append('photographer', USERNAME);
+      
+      try {
+        const bar = document.getElementById(`bar-${id}`);
+        const status = document.getElementById(`status-${id}`);
+        
+        // Mock progress for UI feedback since fetch doesn't support upload progress natively
+        let p = 10;
+        const intv = setInterval(() => { p = Math.min(p+20, 90); bar.style.width = p + '%'; }, 200);
+        
+        const res = await fetch(`${CLOUD_API}/upload`, { method: 'POST', body: formData });
+        clearInterval(intv);
+        
+        if (res.ok) {
+          bar.style.width = '100%';
+          status.innerText = 'Done';
+          status.className = 'q-status q-success';
+          setTimeout(() => loadGallery(), 500); // Reload gallery
+        } else {
+          throw new Error('Upload failed');
+        }
+      } catch (err) {
+        document.getElementById(`bar-${id}`).style.width = '100%';
+        document.getElementById(`bar-${id}`).style.background = 'var(--red)';
+        const st = document.getElementById(`status-${id}`);
+        st.innerText = 'Failed';
+        st.className = 'q-status q-error';
+      }
+    }
+  </script>
+</body>
+</html>

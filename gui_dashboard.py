@@ -101,30 +101,65 @@ def draw_emoji(cv_img, is_smile, is_thumb):
         return cv_img
 
 class EllipseKalmanFilter:
+    """
+    10-state Kalman filter for ellipse parameters (cx, cy, MA, ma, angle).
+    State vector: [cx, cy, MA, ma, angle, vcx, vcy, vMA, vma, vangle]
+    Measurement:  [cx, cy, MA, ma, angle]
+    Velocity states let the filter predict motion between frames,
+    which eliminates jitter without adding perceptible lag.
+    """
     def __init__(self):
-        self.q = 0.05  # process noise (higher = trusts new measurements more)
-        self.r = 0.5   # measurement noise (higher = smoother but more lag)
-        self.p = np.ones(5)
-        self.x = None
+        self.kf = cv2.KalmanFilter(10, 5)   # 10 states, 5 measurements
+        dt = 1.0
+
+        # Transition matrix  (constant-velocity model)
+        A = np.eye(10, dtype=np.float32)
+        for i in range(5):
+            A[i, i + 5] = dt          # position += velocity * dt
+        self.kf.transitionMatrix = A
+
+        # Measurement matrix  (we observe positions only, not velocities)
+        H = np.zeros((5, 10), dtype=np.float32)
+        for i in range(5):
+            H[i, i] = 1.0
+        self.kf.measurementMatrix = H
+
+        # Process noise — how much the ellipse can naturally change per frame
+        self.kf.processNoiseCov = np.eye(10, dtype=np.float32) * 1e-2
+        for i in range(5, 10):              # velocities can vary more
+            self.kf.processNoiseCov[i, i] = 1e-1
+
+        # Measurement noise — trust the detector less → smoother
+        self.kf.measurementNoiseCov = np.eye(5, dtype=np.float32) * 5.0
+
+        # Initial error covariance
+        self.kf.errorCovPost = np.eye(10, dtype=np.float32) * 1.0
+
+        self.initialized = False
+        self._last_angle = 0.0
 
     def update(self, meas):
         meas = np.array(meas, dtype=np.float32)
-        if self.x is None:
-            self.x = meas
-            return self.x
-            
-        # Unwrap angle to prevent 180-degree jump jitter
-        if meas[4] - self.x[4] > 90:
-            meas[4] -= 180
-        elif meas[4] - self.x[4] < -90:
-            meas[4] += 180
-            
-        # 1D Kalman update for each parameter
-        self.p = self.p + self.q
-        k = self.p / (self.p + self.r)
-        self.x = self.x + k * (meas - self.x)
-        self.p = (1 - k) * self.p
-        return self.x
+
+        # Unwrap angle to prevent 180° discontinuity
+        angle = meas[4]
+        if self.initialized:
+            diff = angle - self._last_angle
+            if   diff >  90: angle -= 180
+            elif diff < -90: angle += 180
+        meas[4] = angle
+        self._last_angle = angle
+
+        if not self.initialized:
+            # Seed the state with the first measurement (zero velocity)
+            self.kf.statePost = np.zeros((10, 1), dtype=np.float32)
+            for i in range(5):
+                self.kf.statePost[i, 0] = meas[i]
+            self.initialized = True
+
+        self.kf.predict()
+        corrected = self.kf.correct(meas.reshape(5, 1))
+        return corrected[:5, 0].tolist()
 
 class CaptureDashboard(QMainWindow):
     def __init__(self):
@@ -548,50 +583,38 @@ class CaptureDashboard(QMainWindow):
                         captured_reason = best_frame["reason"]
                         self.last_optimal_bboxes[track_id] = best_frame["fb"]
 
-                # Dynamic Pose Ellipse & Closed Eye Overlays
+                # ── Body Ellipse — derived from smoothed bbox, not noisy keypoints ──
+                # Using the EMA-smoothed bbox as the measurement source eliminates
+                # fitEllipse noise entirely. Kalman handles velocity-based prediction.
                 overlay = display_frame.copy()
-                drawn_ellipse = False
-                
+
+                # Eye blink highlight (small, separate from main ellipse)
                 if not left_eye_open and is_frontal:
-                    cv2.ellipse(overlay, (int(kpts[1][0]), int(kpts[1][1])), (int(eye_dist*0.3), int(eye_dist*0.15)), 0, 0, 360, (200, 105, 255), -1) # Pink
+                    cv2.ellipse(overlay, (int(kpts[1][0]), int(kpts[1][1])),
+                                (int(eye_dist*0.3), int(eye_dist*0.15)), 0, 0, 360, (200, 105, 255), -1)
                 if not right_eye_open and is_frontal:
-                    cv2.ellipse(overlay, (int(kpts[2][0]), int(kpts[2][1])), (int(eye_dist*0.3), int(eye_dist*0.15)), 0, 0, 360, (200, 105, 255), -1) # Pink
-                    
-                if kpts is not None and len(kpts) >= 5:
-                    valid_pts = []
-                    for kp in kpts:
-                        if kp[2] > 0.3:
-                            valid_pts.append([kp[0], kp[1]])
-                            
-                    if len(valid_pts) >= 5:
-                        pts_array = np.array(valid_pts, dtype=np.int32)
-                        # cv2.fitEllipse requires at least 5 points
-                        box2d = cv2.fitEllipse(pts_array)
-                        (cx, cy), (MA, ma), angle = box2d
-                        
-                        if track_id not in self.ellipse_kalmans:
-                            self.ellipse_kalmans[track_id] = EllipseKalmanFilter()
-                            
-                        # Apply Kalman smoothing
-                        filtered = self.ellipse_kalmans[track_id].update([cx, cy, MA, ma, angle])
-                        cx, cy, MA, ma, angle = filtered
-                        
-                        axes = (int(MA/2 * 1.3), int(ma/2 * 1.3)) # Pad it slightly as a bubble
-                        center = (int(cx), int(cy))
-                        
-                        if axes[0] > 10 and axes[1] > 10:
-                            cv2.ellipse(overlay, center, axes, angle, 0, 360, (235, 206, 135), -1)
-                            cv2.addWeighted(overlay, 0.3, display_frame, 0.7, 0, display_frame)
-                            cv2.ellipse(display_frame, center, axes, angle, 0, 360, (235, 206, 135), 2)
-                            drawn_ellipse = True
-                            
-                if not drawn_ellipse:
-                    # Fallback to standard vertical ellipse based on bounding box
-                    center_oval = (int((x1 + x2) / 2), int((y1 + y2) / 2))
-                    axes = (int((x2 - x1) * 0.35), int((y2 - y1) / 2))
-                    cv2.ellipse(overlay, center_oval, axes, 0, 0, 360, (235, 206, 135), -1)
-                    cv2.addWeighted(overlay, 0.3, display_frame, 0.7, 0, display_frame)
-                    cv2.ellipse(display_frame, center_oval, axes, 0, 0, 360, (235, 206, 135), 2)
+                    cv2.ellipse(overlay, (int(kpts[2][0]), int(kpts[2][1])),
+                                (int(eye_dist*0.3), int(eye_dist*0.15)), 0, 0, 360, (200, 105, 255), -1)
+
+                # Derive ellipse from smoothed bbox — always stable
+                ecx   = (x1 + x2) / 2.0
+                ecy   = (y1 + y2) / 2.0
+                e_rx  = (x2 - x1) * 0.38   # horizontal semi-axis
+                e_ry  = (y2 - y1) * 0.52   # vertical semi-axis (slightly taller)
+
+                if track_id not in self.ellipse_kalmans:
+                    self.ellipse_kalmans[track_id] = EllipseKalmanFilter()
+
+                # Kalman measurement: [cx, cy, rx, ry, angle=0]
+                filtered = self.ellipse_kalmans[track_id].update([ecx, ecy, e_rx * 2, e_ry * 2, 0.0])
+                fcx, fcy, fMA, fma, fangle = filtered
+                axes = (max(10, int(fMA / 2)), max(10, int(fma / 2)))
+                center = (int(fcx), int(fcy))
+
+                cv2.ellipse(overlay, center, axes, fangle, 0, 360, (235, 206, 135), -1)
+                cv2.addWeighted(overlay, 0.25, display_frame, 0.75, 0, display_frame)
+                cv2.ellipse(display_frame, center, axes, fangle, 0, 360, (235, 206, 135), 2)
+
 
                 # Plot gestures visibly on the main feed
                 if is_smiling:

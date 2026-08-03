@@ -21,7 +21,7 @@ export default function LabPage() {
       const localUrl = URL.createObjectURL(file);
       
       try {
-        const res = await fetch("http://localhost:8001/upload", {
+        const res = await fetch(`${window.location.protocol}//${window.location.hostname}:8001/upload`, {
           method: "POST",
           body: formData,
         });
@@ -44,7 +44,7 @@ export default function LabPage() {
 
   const resetLab = async () => {
     try {
-      await fetch("http://localhost:8001/reset", { method: "POST" });
+      await fetch(`${window.location.protocol}//${window.location.hostname}:8001/reset`, { method: "POST" });
     } catch(e) {
       console.error(e);
     }
@@ -70,7 +70,7 @@ export default function LabPage() {
     formData.append("file", fileOrBlob, "subject.jpg");
     
     try {
-      const res = await fetch("http://localhost:8001/match", {
+      const res = await fetch(`${window.location.protocol}//${window.location.hostname}:8001/match`, {
         method: "POST",
         body: formData,
       });

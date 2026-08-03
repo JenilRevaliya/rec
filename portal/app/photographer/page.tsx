@@ -19,20 +19,33 @@ export default function PhotographerPortal() {
   const [sortMode, setSortMode] = useState<"newest" | "oldest">("newest");
   const [generatedTokens, setGeneratedTokens] = useState<string[]>([]);
   const [generatingLinks, setGeneratingLinks] = useState(false);
+  const [shareBaseUrl, setShareBaseUrl] = useState<string>("");
 
   React.useEffect(() => {
-    if (activeEvent) {
-      fetch(`http://localhost:8001/photos/${activeEvent}`)
+    if (!activeEvent) return;
+    
+    const fetchPhotos = () => {
+      fetch(`${window.location.protocol}//${window.location.hostname}:8001/photos/${activeEvent}`)
         .then(res => res.json())
         .then(data => {
           if (Array.isArray(data)) setPastPhotos(data);
         })
         .catch(console.error);
-    }
+    };
+
+    fetchPhotos();
+    const interval = setInterval(fetchPhotos, 5000); // Poll for edge uploads
+    return () => clearInterval(interval);
   }, [activeEvent]);
 
   useEffect(() => {
     setIsClient(true);
+    if (typeof window !== 'undefined') {
+      const currentOrigin = window.location.origin;
+      setShareBaseUrl(currentOrigin);
+      // Initial auto-detect attempt
+      detectNetworkIp();
+    }
     const storedUser = localStorage.getItem("rec_username_photographer");
     const storedToken = localStorage.getItem("rec_token_photographer");
     if (storedUser && storedToken) {
@@ -40,6 +53,19 @@ export default function PhotographerPortal() {
       setLoggedIn(true);
     }
   }, []);
+
+  const detectNetworkIp = () => {
+    if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+      fetch(`${window.location.protocol}//${window.location.hostname}:8001/network-ip`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.ip && data.ip !== '127.0.0.1') {
+            setShareBaseUrl(`${window.location.protocol}//${data.ip}:${window.location.port}`);
+          }
+        })
+        .catch(console.error);
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("rec_token_photographer");
@@ -62,7 +88,7 @@ export default function PhotographerPortal() {
     }
   };
 
-  const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/user?event=${activeEvent}` : `http://localhost:3000/user?event=${activeEvent}`;
+  const shareUrl = shareBaseUrl ? `${shareBaseUrl}/user?event=${activeEvent}` : "";
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -73,7 +99,7 @@ export default function PhotographerPortal() {
   const handleGeneratePrivateLinks = async () => {
     setGeneratingLinks(true);
     try {
-      const res = await fetch("http://localhost:8001/links/generate", {
+      const res = await fetch(`${window.location.protocol}//${window.location.hostname}:8001/links/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ event_id: activeEvent, count: 5, max_opens: 2 })
@@ -175,7 +201,7 @@ export default function PhotographerPortal() {
       formData.append("photographer", username);
       
       try {
-        const res = await fetch("http://localhost:8001/upload", {
+        const res = await fetch(`${window.location.protocol}//${window.location.hostname}:8001/upload`, {
           method: "POST",
           body: formData,
         });
@@ -195,7 +221,7 @@ export default function PhotographerPortal() {
     alert("Batch processed successfully by AI pipeline!");
     
     // Refresh past photos
-    fetch(`http://localhost:8001/photos/${activeEvent}`)
+    fetch(`${window.location.protocol}//${window.location.hostname}:8001/photos/${activeEvent}`)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) setPastPhotos(data);
@@ -264,21 +290,35 @@ export default function PhotographerPortal() {
             
             <div className="bg-neo-orange border-4 border-black p-6 shadow-neo text-center">
               <div className="bg-white border-4 border-black inline-block p-2 mb-4">
-                <img 
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(shareUrl)}`} 
-                  alt="Share QR" 
-                  className="w-32 h-32"
-                />
+                {shareUrl ? (
+                  <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(shareUrl)}`} 
+                    alt="Share QR" 
+                    className="w-32 h-32"
+                  />
+                ) : (
+                  <div className="w-32 h-32 bg-gray-200 animate-pulse"></div>
+                )}
               </div>
               <h3 className="text-xl font-bold uppercase mb-2">Share Portal</h3>
-              <p className="text-sm mb-2 font-bold">Print this QR code or send the link to attendees so they can find their photos.</p>
+              <p className="text-sm mb-4 font-bold">Print this QR code or send the link to attendees so they can find their photos.</p>
               
-              <div className="bg-white border-4 border-black p-2 mb-4 text-xs overflow-hidden text-ellipsis whitespace-nowrap font-bold">
-                {shareUrl}
+              <div className="mb-4 text-left">
+                <label className="text-[10px] font-bold text-black uppercase mb-1 flex justify-between items-center">
+                  <span>Public Domain / Network IP</span>
+                  <button onClick={detectNetworkIp} className="text-neo-blue hover:underline">Auto-Detect</button>
+                </label>
+                <input 
+                  type="text" 
+                  value={shareBaseUrl} 
+                  onChange={e => setShareBaseUrl(e.target.value)} 
+                  className="w-full text-xs p-2 border-4 border-black bg-white font-bold outline-none focus:bg-neo-yellow transition-colors"
+                  placeholder="e.g. http://192.168.1.5:3000"
+                />
               </div>
               
               <button 
-                onClick={() => copyToClipboard(shareUrl)}
+                onClick={() => shareUrl && copyToClipboard(shareUrl)}
                 className={`w-full font-bold py-3 border-4 border-black transition-all flex justify-center items-center mb-4 ${linkCopied ? 'bg-neo-green text-black translate-y-1 translate-x-1 shadow-none' : 'bg-white hover:-translate-y-1 hover:-translate-x-1 hover:shadow-neo'}`}
               >
                 <Send className="mr-2 w-5 h-5" /> {linkCopied ? 'Copied!' : 'Copy Public Link'}

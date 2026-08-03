@@ -19,7 +19,7 @@ export default function LoginForm({ expectedRole, onLoginSuccess, title }: Login
     setError("");
     
     try {
-      const res = await fetch("http://localhost:8001/login", {
+      const res = await fetch(`${window.location.protocol}//${window.location.hostname}:8001/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password })

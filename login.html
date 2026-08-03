@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>REC — Sign In</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0a0a; --surface: #111; --border: #1e1e1e;
+      --text: #e0e0e0; --muted: #555; --green: #4caf50; --red: #e05252;
+    }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', ui-monospace, monospace; font-size: 13px;
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    }
+
+    .card {
+      width: 320px;
+      display: flex; flex-direction: column; gap: 24px;
+    }
+
+    .brand {
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .brand-name {
+      font-size: 18px; font-weight: 600; letter-spacing: .1em; color: var(--text);
+    }
+    .brand-sub {
+      font-size: 11px; color: var(--muted); letter-spacing: .06em;
+    }
+
+    .form {
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label {
+      font-size: 10px; color: var(--muted);
+      letter-spacing: .1em; text-transform: uppercase;
+    }
+    .field input {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 5px; color: var(--text); font-family: inherit;
+      font-size: 13px; padding: 9px 12px; outline: none;
+      transition: border-color .2s; width: 100%;
+    }
+    .field input:focus { border-color: #333; }
+    .field input::placeholder { color: var(--muted); }
+    
+    .password-wrapper { position: relative; display: flex; align-items: center; }
+    .show-password {
+      position: absolute; right: 10px; background: none; border: none;
+      color: var(--muted); cursor: pointer; font-size: 11px; font-family: inherit;
+      padding: 4px; transition: color .2s; text-transform: uppercase;
+    }
+    .show-password:hover { color: var(--text); }
+
+    .error {
+      font-size: 11px; color: var(--red);
+      background: rgba(224,82,82,.08); border: 1px solid rgba(224,82,82,.2);
+      border-radius: 5px; padding: 8px 12px;
+    }
+
+    .submit-btn {
+      background: var(--surface); border: 1px solid var(--border);
+      color: var(--text); font-family: inherit; font-size: 12px;
+      font-weight: 500; letter-spacing: .06em;
+      padding: 10px; border-radius: 5px; cursor: pointer;
+      transition: border-color .2s, background .2s;
+      margin-top: 2px;
+    }
+    .submit-btn:hover { border-color: #333; background: #161616; }
+    .submit-btn:active { transform: scale(0.99); }
+
+    .bypass-note {
+      font-size: 10px; color: var(--muted);
+      letter-spacing: .04em; text-align: center;
+      padding-top: 4px;
+    }
+    .bypass-note code {
+      color: #444; background: #161616;
+      padding: 1px 5px; border-radius: 3px; font-size: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">
+      <span class="brand-name">REC</span>
+      <span class="brand-sub">Capture Dashboard</span>
+    </div>
+
+    <!--ERROR-->
+
+    <form class="form" method="POST" action="/login" autocomplete="off">
+      <div class="field">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" placeholder="admin" autocomplete="username" required />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="password-wrapper">
+          <input id="password" name="password" type="password" placeholder="••••••••" autocomplete="current-password" required />
+          <button type="button" class="show-password" onclick="togglePassword()" aria-label="Toggle password visibility">
+            <svg id="eye-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <button class="submit-btn" type="submit">Sign In</button>
+    </form>
+
+    <p class="bypass-note">Bypass mode &mdash; default <code>admin</code> / <code>rec2026</code></p>
+  </div>
+  
+  <script>
+    function togglePassword() {
+      const pwd = document.getElementById('password');
+      const icon = document.getElementById('eye-icon');
+      if (pwd.type === 'password') {
+        pwd.type = 'text';
+        icon.innerHTML = '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"></path><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"></path><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"></path><line x1="2" y1="2" x2="22" y2="22"></line>';
+      } else {
+        pwd.type = 'password';
+        icon.innerHTML = '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"></path><circle cx="12" cy="12" r="3"></circle>';
+      }
+    }
+  </script>
+</body>
+</html>

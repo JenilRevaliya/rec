@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>REC</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0a0a; --surface: #111; --border: #1e1e1e;
+      --text: #e0e0e0; --muted: #555; --green: #4caf50;
+      --yellow: #f0b429; --red: #e05252;
+    }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', ui-monospace, monospace; font-size: 13px;
+      height: 100vh; display: grid;
+      grid-template-rows: 44px 1fr; overflow: hidden;
+    }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 20px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    header .logo { font-size: 15px; font-weight: 600; letter-spacing: .08em; }
+    .pill {
+      padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 500;
+      letter-spacing: .04em; border: 1px solid var(--border); color: var(--muted);
+      transition: color .25s, border-color .25s;
+    }
+    .pill.active { color: var(--green); border-color: var(--green); }
+    .pill.warn   { color: var(--yellow); border-color: var(--yellow); }
+    .status-bar  { display: flex; gap: 16px; align-items: center; }
+
+    main { display: grid; grid-template-columns: 1fr 300px; overflow: hidden; }
+
+    /* ── Feed ── */
+    #feed-panel {
+      position: relative; background: #000;
+      display: flex; align-items: center; justify-content: center; overflow: hidden;
+    }
+    #feed-canvas { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+    #feed-overlay {
+      position: absolute; top: 0; left: 0; font-size: 12px; color: var(--muted);
+      padding: 12px; pointer-events: none; letter-spacing: .04em;
+    }
+
+    /* ── Sidebar ── */
+    #right { display: grid; grid-template-rows: auto auto 1fr; border-left: 1px solid var(--border); overflow: hidden; }
+    #controls { padding: 10px 14px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+    .section-label { font-size: 10px; letter-spacing: .12em; color: var(--muted); text-transform: uppercase; }
+
+    /* ── Toggle ── */
+    .toggle-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px;
+      cursor: pointer; user-select: none;
+      transition: border-color .2s, background .2s;
+    }
+    .toggle-item:hover { border-color: #2a2a2a; background: #141414; }
+    .toggle-item:active { transform: scale(0.985); }
+    .switch {
+      width: 36px; height: 20px; background: #222;
+      border-radius: 12px; position: relative; flex-shrink: 0;
+      transition: background .25s;
+    }
+    .switch::after {
+      content: ''; position: absolute;
+      left: 3px; top: 3px; width: 14px; height: 14px;
+      border-radius: 50%; background: #555;
+      transition: left .25s cubic-bezier(.4,0,.2,1), background .25s;
+      will-change: left;
+    }
+    .toggle-item.on .switch { background: rgba(76,175,80,.25); }
+    .toggle-item.on .switch::after { left: 19px; background: var(--green); }
+
+    /* Stats */
+    .stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .stat-box { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+    .stat-box .val { font-size: 17px; font-weight: 600; line-height: 1; }
+    .stat-box .lbl { font-size: 10px; color: var(--muted); letter-spacing: .06em; margin-top: 3px; }
+
+    .subjects-row { display: flex; gap: 8px; flex-wrap: wrap; min-height: 22px; }
+    .subject-tag { padding: 2px 8px; border-radius: 4px; background: var(--surface); border: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+    .subject-tag.on { color: var(--text); border-color: #333; }
+
+    #clear-btn {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      padding: 5px 12px; border-radius: 5px; cursor: pointer;
+      font-size: 11px; letter-spacing: .05em; align-self: flex-end;
+      transition: border-color .2s, color .2s;
+    }
+    #clear-btn:hover { border-color: #333; color: var(--text); }
+
+    /* ── Queue panel ── */
+    #queue-panel { overflow-y: auto; }
+    #queue-panel::-webkit-scrollbar { width: 3px; }
+    #queue-panel::-webkit-scrollbar-thumb { background: #222; border-radius: 2px; }
+
+    .queue-header {
+      position: sticky; top: 0; background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 7px 14px; display: flex; align-items: center;
+      justify-content: space-between; z-index: 2;
+    }
+    #queue-list { list-style: none; }
+    .queue-item {
+      display: grid; grid-template-columns: 72px 1fr; gap: 10px;
+      align-items: center; padding: 9px 12px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background .15s;
+      animation: sl .3s ease;
+    }
+    .queue-item:hover { background: #141414; }
+    @keyframes sl { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
+    .queue-thumb { width:72px; height:54px; object-fit:cover; border-radius:4px; border:1px solid var(--border); pointer-events:none; }
+    .cap-id   { font-size:12px; font-weight:600; }
+    .cap-time { font-size:11px; color:var(--muted); margin-top:2px; }
+    .cap-reason {
+      display:inline-block; margin-top:5px; padding:2px 7px;
+      border-radius:3px; font-size:10px; letter-spacing:.04em;
+      background:#1a1a1a; border:1px solid var(--border); color:var(--muted);
+    }
+    .queue-empty { padding:40px 16px; text-align:center; color:var(--muted); font-size:11px; }
+    @keyframes fl { 0%,100%{opacity:1} 50%{opacity:.35} }
+    .flashing { animation: fl .7s infinite; }
+
+    /* ── Tabs ── */
+    .tab-bar {
+      display: flex; align-items: center; gap: 2px;
+      padding: 6px 12px; border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .tab-btn {
+      padding: 3px 12px; font-size: 10px; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--muted); cursor: pointer;
+      border: 1px solid transparent; border-radius: 4px; background: none;
+      transition: color .15s, background .15s, border-color .15s;
+    }
+    .tab-btn:hover { color: var(--text); background: #1a1a1a; }
+    .tab-btn.active {
+      color: var(--text); background: #1a1a1a;
+      border-color: var(--border);
+    }
+    .tab-panel { display: none; flex-direction: column; overflow: hidden; height: 100%; }
+    .tab-panel.active { display: flex; }
+
+    /* ── Upload panel ── */
+    #upload-panel { overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+    #upload-panel::-webkit-scrollbar { width: 3px; }
+    #upload-panel::-webkit-scrollbar-thumb { background: #222; border-radius: 2px; }
+
+    .upload-controls {
+      display: flex; flex-direction: column; gap: 8px;
+      padding-bottom: 12px; border-bottom: 1px solid var(--border);
+    }
+    .upload-ctrl-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .upload-btn {
+      background: none; border: 1px solid var(--border); color: var(--muted);
+      padding: 5px 12px; border-radius: 5px; cursor: pointer;
+      font-size: 11px; letter-spacing: .05em;
+      transition: border-color .2s, color .2s;
+    }
+    .upload-btn:hover { border-color: #444; color: var(--text); }
+    .upload-btn.primary { border-color: #2a3a2a; color: var(--green); }
+    .upload-btn.primary:hover { border-color: var(--green); }
+
+    .checkbox-item { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+    .checkbox-item input { accent-color: var(--green); width: 13px; height: 13px; cursor: pointer; }
+    .checkbox-item label { font-size: 12px; color: var(--muted); cursor: pointer; }
+
+    /* Upload thumbnail grid */
+    #upload-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+    }
+    .up-thumb-wrap {
+      position: relative; aspect-ratio: 4/3; border-radius: 5px;
+      overflow: hidden; border: 1px solid var(--border); cursor: pointer;
+      background: #0d0d0d;
+    }
+    .up-thumb-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .up-overlay {
+      position: absolute; inset: 0; background: rgba(0,0,0,.78);
+      display: flex; flex-direction: column; justify-content: flex-end;
+      padding: 6px; opacity: 0; transition: opacity .18s;
+      font-size: 10px; gap: 2px;
+    }
+    .up-thumb-wrap:hover .up-overlay { opacity: 1; }
+    .up-overlay .ov-id   { font-weight: 600; color: var(--text); }
+    .up-overlay .ov-time { color: var(--muted); }
+    .up-overlay .ov-reason { color: var(--muted); }
+    .up-badge {
+      position: absolute; top: 4px; right: 4px;
+      padding: 2px 6px; border-radius: 3px; font-size: 9px;
+      letter-spacing: .05em; font-weight: 600; text-transform: uppercase;
+    }
+    .up-badge.pending   { background: #1a1a1a; color: var(--muted); }
+    .up-badge.uploading { background: #1a2e3a; color: #5bc8f5; animation: fl .8s infinite; }
+    .up-badge.uploaded  { background: #1a2e1a; color: var(--green); }
+    .up-badge.failed    { background: #2e1a1a; color: var(--red); }
+    .up-action {
+      position: absolute; bottom: 4px; right: 4px;
+      background: rgba(0,0,0,.7); border: 1px solid #333; color: var(--muted);
+      padding: 2px 7px; border-radius: 3px; font-size: 9px;
+      cursor: pointer; opacity: 0; transition: opacity .18s, color .15s;
+    }
+    .up-thumb-wrap:hover .up-action { opacity: 1; }
+    .up-action:hover { color: var(--text); }
+    .upload-empty { text-align: center; color: var(--muted); font-size: 11px; padding: 30px 0; }
+
+    /* ── Lightbox ── */
+    #lightbox {
+      position: fixed; inset: 0; z-index: 1000;
+      background: rgba(0,0,0,.85);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity .2s;
+      backdrop-filter: blur(6px);
+    }
+    #lightbox.open { opacity: 1; pointer-events: all; }
+    #lb-card {
+      background: #111; border: 1px solid #222; border-radius: 10px;
+      overflow: hidden; max-width: 680px; width: 90vw;
+      transform: scale(.95);
+      transition: transform .2s;
+    }
+    #lightbox.open #lb-card { transform: scale(1); }
+    #lb-img { width: 100%; display: block; min-height: 80px; }
+    #lb-loading {
+      position: absolute; inset: 0; display: flex; align-items: center;
+      justify-content: center; background: #111; font-size: 11px;
+      color: var(--muted); letter-spacing: .08em; pointer-events: none;
+    }
+    #lb-img-wrap { position: relative; }
+    #lb-meta { padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); }
+    #lb-title { font-size: 15px; font-weight: 600; }
+    .lb-row { display: flex; gap: 20px; }
+    .lb-field { display: flex; flex-direction: column; gap: 2px; }
+    .lb-field .lk { font-size: 10px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; }
+    .lb-field .lv { font-size: 13px; }
+    #lb-close {
+      position: absolute; top: 16px; right: 16px;
+      background: #1a1a1a; border: 1px solid #2a2a2a; color: var(--muted);
+      width: 30px; height: 30px; border-radius: 50%;
+      font-size: 16px; line-height: 30px; text-align: center;
+      cursor: pointer; transition: color .15s, border-color .15s;
+    }
+    #lb-close:hover { color: var(--text); border-color: #444; }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<!-- ── Lightbox ─────────────────────────────────────────────────────────────── -->
+<div id="lightbox" onclick="closeLightbox(event)">
+  <div id="lb-card">
+    <div id="lb-img-wrap">
+      <img id="lb-img" src="" alt="capture" />
+      <div id="lb-loading">Loading…</div>
+    </div>
+    <div id="lb-meta">
+      <div id="lb-title">—</div>
+      <div class="lb-row">
+        <div class="lb-field"><span class="lk">Time</span><span class="lv" id="lb-time">—</span></div>
+        <div class="lb-field"><span class="lk">Subject ID</span><span class="lv" id="lb-track">—</span></div>
+        <div class="lb-field"><span class="lk">Trigger</span><span class="lv" id="lb-reason">—</span></div>
+      </div>
+    </div>
+  </div>
+  <div id="lb-close" onclick="closeLightbox()">×</div>
+</div>
+
+<!-- ── Header ─────────────────────────────────────────────────────────────── -->
+<header>
+  <span class="logo">REC</span>
+  <div class="status-bar">
+    <span class="pill" id="pill-smile">Smile</span>
+    <span class="pill" id="pill-thumbs">Thumbs Up</span>
+    <span class="pill" id="pill-cd">Ready</span>
+    <span class="pill" id="pill-fps">— fps</span>
+    <a href="/logout" style="font-size:11px;color:var(--muted);text-decoration:none;letter-spacing:.05em;padding:3px 0;transition:color .2s" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">Sign out</a>
+  </div>
+</header>
+
+<main>
+  <section id="feed-panel">
+    <canvas id="feed-canvas"></canvas>
+    <div id="feed-overlay">connecting…</div>
+  </section>
+
+  <aside id="right">
+    <div id="controls">
+      <span class="section-label">Triggers</span>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="toggle-item" id="toggle-smile" onclick="toggle('smile')">
+          <span>Require Smile</span><div class="switch"></div>
+        </div>
+        <div class="toggle-item" id="toggle-thumbs" onclick="toggle('thumbs')">
+          <span>Require Thumbs Up</span><div class="switch"></div>
+        </div>
+      </div>
+      <span class="section-label">Session</span>
+      <div class="stats-row">
+        <div class="stat-box"><div class="val" id="s-cap">0</div><div class="lbl">Captured</div></div>
+        <div class="stat-box"><div class="val" id="s-sub">0</div><div class="lbl">Subjects</div></div>
+        <div class="stat-box"><div class="val" id="s-q">0</div><div class="lbl">Queue</div></div>
+      </div>
+      <span class="section-label">Detected</span>
+      <div class="subjects-row" id="srow"><span class="subject-tag">—</span></div>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('queue')">Queue</button>
+      <button class="tab-btn" onclick="switchTab('upload')">Upload</button>
+    </div>
+
+    <!-- Queue tab -->
+    <div class="tab-panel active" id="tab-queue">
+      <div id="queue-panel">
+        <div class="queue-header">
+          <span class="section-label">Queue</span>
+          <button id="clear-btn" onclick="clearQ()">Clear</button>
+        </div>
+        <ul id="queue-list">
+          <li class="queue-empty" id="qempty">No captures yet.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Upload tab -->
+    <div class="tab-panel" id="tab-upload">
+      <div id="upload-panel">
+        <div class="upload-controls">
+          <div class="upload-ctrl-row" style="margin-bottom:4px;">
+            <div class="toggle-item" id="toggle-auto-upload" onclick="toggleUpload('auto_upload')" style="flex:1">
+              <span>Auto Upload</span><div class="switch"></div>
+            </div>
+          </div>
+          <div class="upload-ctrl-row" style="margin-bottom:4px; align-items:flex-end;">
+            <div style="flex:1;">
+              <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                <label style="font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em;">Event ID</label>
+                <a href="http://localhost:3000/photographer" target="_blank" style="font-size:10px; color:var(--green); text-decoration:none; letter-spacing:.05em;">Open Portal ↗</a>
+              </div>
+              <input type="text" id="event-id-input" list="events-list" placeholder="Select or Type New..." onchange="toggleUpload('event_id')" style="width:100%; padding:8px 10px; background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:5px; font-size:11px; outline:none;" />
+              <datalist id="events-list"></datalist>
+            </div>
+          </div>
+          <div class="upload-ctrl-row">
+            <label class="checkbox-item">
+              <input type="checkbox" id="chk-auto-delete" onchange="toggleUpload('auto_delete')" />
+              <label for="chk-auto-delete">Delete after upload</label>
+            </label>
+            <button class="upload-btn primary" onclick="uploadAll()">Upload All</button>
+          </div>
+        </div>
+        <div id="upload-grid"><div class="upload-empty">No captures yet.</div></div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<script>
+// ── Settings ──────────────────────────────────────────────────────────────────
+const cfg = { smile: false, thumbs: false };
+
+function toggle(key) {
+  // Update UI immediately — feels instant
+  cfg[key] = !cfg[key];
+  document.getElementById('toggle-' + key).classList.toggle('on', cfg[key]);
+  // Fire-and-forget to backend — no awaiting, no blocking
+  fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ require_smile: cfg.smile, require_thumbs: cfg.thumbs })
+  }).catch(() => {});
+}
+
+function silentSet(key, val) {
+  // Called only by status poll — only update if backend disagrees
+  if (cfg[key] !== val) {
+    cfg[key] = val;
+    document.getElementById('toggle-' + key).classList.toggle('on', val);
+  }
+}
+
+// ── Canvas Frame Loop ─────────────────────────────────────────────────────────
+const canvas  = document.getElementById('feed-canvas');
+const ctx     = canvas.getContext('2d');
+const overlay = document.getElementById('feed-overlay');
+const panel   = document.getElementById('feed-panel');
+
+let fetching   = false;
+let frameCount = 0;
+let fpsTimer   = performance.now();
+
+function fetchFrame() {
+  if (fetching) return;
+  fetching = true;
+  const url    = '/api/frame?t=' + Date.now();
+  const newImg = new Image();
+
+  newImg.onload = () => {
+    fetching = false;
+    const pw    = panel.clientWidth;
+    const ph    = panel.clientHeight;
+    const scale = Math.min(pw / newImg.width, ph / newImg.height);
+    canvas.width  = Math.round(newImg.width  * scale);
+    canvas.height = Math.round(newImg.height * scale);
+    ctx.drawImage(newImg, 0, 0, canvas.width, canvas.height);
+
+    frameCount++;
+    const now = performance.now();
+    if (now - fpsTimer >= 1000) {
+      document.getElementById('pill-fps').textContent =
+        Math.round(frameCount * 1000 / (now - fpsTimer)) + ' fps';
+      frameCount = 0;
+      fpsTimer   = now;
+    }
+    overlay.textContent = '';
+    requestAnimationFrame(fetchFrame);
+  };
+  newImg.onerror = () => {
+    fetching = false;
+    overlay.textContent = 'connecting…';
+    setTimeout(fetchFrame, 300);
+  };
+  newImg.src = url;
+}
+fetchFrame();
+
+// ── Status Poll ───────────────────────────────────────────────────────────────
+async function pollStatus() {
+  try {
+    const d = await fetch('/api/status').then(r => r.json());
+    document.getElementById('s-cap').textContent = d.captures ?? 0;
+    document.getElementById('s-sub').textContent = (d.subjects || []).length;
+
+    silentSet('smile',  d.require_smile);
+    silentSet('thumbs', d.require_thumbs);
+
+    document.getElementById('srow').innerHTML = (d.subjects || []).length
+      ? d.subjects.map(s => `<span class="subject-tag on">ID ${s}</span>`).join('')
+      : '<span class="subject-tag">—</span>';
+
+    setPill('pill-smile',  d.require_smile,  'Smile');
+    setPill('pill-thumbs', d.require_thumbs, 'Thumbs Up');
+    const inCd = (d.cooldown ?? 0) > 0;
+    const cp   = document.getElementById('pill-cd');
+    cp.textContent = inCd ? 'Cooldown' : 'Ready';
+    cp.className   = 'pill' + (inCd ? ' warn flashing' : '');
+  } catch (_) {}
+}
+
+function setPill(id, active, label) {
+  const el = document.getElementById(id);
+  el.textContent = label;
+  el.className   = 'pill' + (active ? ' active' : '');
+}
+
+// ── Queue Poll ────────────────────────────────────────────────────────────────
+let knownIds   = new Set();
+const queueMap = new Map();   // id → item data for lightbox
+
+async function pollQueue() {
+  try {
+    const q = await fetch('/api/queue').then(r => r.json());
+    document.getElementById('s-q').textContent = q.length;
+
+    const list  = document.getElementById('queue-list');
+    const empty = document.getElementById('qempty');
+    empty.style.display = q.length ? 'none' : 'block';
+
+    const newIds = new Set(q.map(x => x.id));
+    q.forEach(item => {
+      queueMap.set(item.id, item);
+      if (!knownIds.has(item.id)) list.insertBefore(mkItem(item), list.firstChild);
+    });
+    [...list.querySelectorAll('.queue-item')].forEach(el => {
+      if (!newIds.has(+el.dataset.id)) el.remove();
+    });
+    knownIds = newIds;
+  } catch (_) {}
+}
+
+function mkItem(item) {
+  const li      = document.createElement('li');
+  li.className  = 'queue-item';
+  li.dataset.id = item.id;
+  li.onclick    = () => openLightbox(item.id);
+  li.innerHTML  = `
+    <img class="queue-thumb" src="data:image/jpeg;base64,${item.thumb}" />
+    <div>
+      <div class="cap-id">Capture #${item.id} <span style="color:var(--muted);font-weight:400">ID ${item.track}</span></div>
+      <div class="cap-time">${item.time}</div>
+      <span class="cap-reason">${item.reason}</span>
+    </div>`;
+  return li;
+}
+
+async function clearQ() {
+  await fetch('/api/clear-queue', { method: 'POST' });
+  knownIds = new Set();
+  queueMap.clear();
+  document.getElementById('queue-list').innerHTML =
+    '<li class="queue-empty" id="qempty">No captures yet.</li>';
+}
+
+// ── Lightbox ──────────────────────────────────────────────────────────────────
+function openLightbox(id) {
+  const item = queueMap.get(id);
+  if (!item) return;
+
+  const lbImg     = document.getElementById('lb-img');
+  const lbLoading = document.getElementById('lb-loading');
+
+  // Populate metadata immediately
+  document.getElementById('lb-title').textContent  = `Capture #${item.id}`;
+  document.getElementById('lb-time').textContent   = item.time;
+  document.getElementById('lb-track').textContent  = `ID ${item.track}`;
+  document.getElementById('lb-reason').textContent = item.reason;
+
+  // Show loading state, clear previous image
+  lbImg.src         = '';
+  lbLoading.style.display = 'flex';
+
+  // Load full-resolution image from disk via /captures route
+  const fullUrl = item.filename ? `/captures/${item.filename}` : `data:image/jpeg;base64,${item.thumb}`;
+  lbImg.onload  = () => { lbLoading.style.display = 'none'; };
+  lbImg.onerror = () => {
+    // Fallback to thumbnail if full-res not available
+    lbImg.src = `data:image/jpeg;base64,${item.thumb}`;
+    lbLoading.style.display = 'none';
+  };
+  lbImg.src = fullUrl;
+
+  document.getElementById('lightbox').classList.add('open');
+}
+
+function closeLightbox(e) {
+  // Close if clicking backdrop (not the card itself)
+  if (e && e.target !== document.getElementById('lightbox') && e.target.id !== 'lb-close') return;
+  document.getElementById('lightbox').classList.remove('open');
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.getElementById('lightbox').classList.remove('open');
+});
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+pollStatus(); pollQueue();
+setInterval(pollStatus, 800);
+setInterval(pollQueue, 1200);
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach((b, i) => {
+    b.classList.toggle('active', ['queue','upload'][i] === name);
+  });
+  document.querySelectorAll('.tab-panel').forEach(p => {
+    p.classList.toggle('active', p.id === 'tab-' + name);
+  });
+  if (name === 'upload') renderUploadGrid();
+}
+
+// ── Upload settings & Events ──────────────────────────────────────────────────
+const uploadCfg = { auto_upload: false, auto_delete: false, event_id: '' };
+
+async function loadEvents() {
+  try {
+    const events = await fetch('/api/events').then(r => r.json());
+    const list = document.getElementById('events-list');
+    list.innerHTML = '';
+    events.forEach(e => {
+      const opt = document.createElement('option');
+      opt.value = e.id;
+      opt.textContent = `${e.name} (by ${e.photographer_id})`;
+      list.appendChild(opt);
+    });
+  } catch (_) {}
+}
+
+async function pollUploadSettings() {
+  try {
+    const d = await fetch('/api/upload-settings').then(r => r.json());
+    uploadCfg.auto_upload = d.auto_upload;
+    uploadCfg.auto_delete = d.auto_delete;
+    uploadCfg.event_id    = d.event_id || '';
+    
+    document.getElementById('toggle-auto-upload').classList.toggle('on', d.auto_upload);
+    document.getElementById('chk-auto-delete').checked = d.auto_delete;
+    const evtInput = document.getElementById('event-id-input');
+    if (document.activeElement !== evtInput) {
+      evtInput.value = uploadCfg.event_id === 'EVT-UNKNOWN' ? '' : uploadCfg.event_id;
+    }
+  } catch (_) {}
+}
+
+function toggleUpload(key) {
+  if (key === 'auto_upload') {
+    uploadCfg.auto_upload = !uploadCfg.auto_upload;
+    document.getElementById('toggle-auto-upload').classList.toggle('on', uploadCfg.auto_upload);
+  } else if (key === 'auto_delete') {
+    uploadCfg.auto_delete = document.getElementById('chk-auto-delete').checked;
+  } else if (key === 'event_id') {
+    uploadCfg.event_id = document.getElementById('event-id-input').value.trim();
+  }
+  
+  fetch('/api/upload-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(uploadCfg)
+  }).catch(() => {});
+}
+
+async function uploadAll() {
+  await fetch('/api/upload-all', { method: 'POST' }).catch(() => {});
+}
+
+async function uploadItem(id) {
+  await fetch(`/api/upload/${id}`, { method: 'POST' }).catch(() => {});
+}
+
+// ── Upload grid ───────────────────────────────────────────────────────────────
+function renderUploadGrid() {
+  const grid  = document.getElementById('upload-grid');
+  const items = [...queueMap.values()];
+  if (!items.length) {
+    grid.innerHTML = '<div class="upload-empty">No captures yet.</div>';
+    return;
+  }
+  // Re-render only changed items by diffing data-id + data-status
+  const existing = {};
+  grid.querySelectorAll('.up-thumb-wrap').forEach(el => {
+    existing[el.dataset.id] = el.dataset.status;
+  });
+  const currentIds = new Set(items.map(x => String(x.id)));
+
+  // Remove stale
+  Object.keys(existing).forEach(id => {
+    if (!currentIds.has(id)) grid.querySelector(`[data-id="${id}"]`)?.remove();
+  });
+  // Remove empty placeholder
+  grid.querySelector('.upload-empty')?.remove();
+
+  items.forEach(item => {
+    const status = item.upload_status || 'pending';
+    const existingEl = grid.querySelector(`[data-id="${item.id}"]`);
+    if (existingEl) {
+      // Just update badge if status changed
+      if (existingEl.dataset.status !== status) {
+        existingEl.dataset.status = status;
+        existingEl.querySelector('.up-badge').className = `up-badge ${status}`;
+        existingEl.querySelector('.up-badge').textContent = status;
+        const btn = existingEl.querySelector('.up-action');
+        if (btn) btn.style.display = status === 'pending' ? '' : 'none';
+      }
+      return;
+    }
+    // Build new card
+    const wrap = document.createElement('div');
+    wrap.className    = 'up-thumb-wrap';
+    wrap.dataset.id   = item.id;
+    wrap.dataset.status = status;
+    wrap.onclick      = () => openLightbox(item.id);
+    wrap.innerHTML    = `
+      <img src="data:image/jpeg;base64,${item.thumb}" loading="lazy" />
+      <div class="up-overlay">
+        <span class="ov-id">Capture #${item.id}</span>
+        <span class="ov-time">${item.time} · ID ${item.track}</span>
+        <span class="ov-reason">${item.reason}</span>
+      </div>
+      <span class="up-badge ${status}">${status}</span>
+      ${status === 'pending' ? `<button class="up-action" onclick="event.stopPropagation();uploadItem(${item.id})">Upload</button>` : ''}`;
+    // Prepend newest first
+    grid.insertBefore(wrap, grid.firstChild);
+  });
+}
+
+// Refresh upload grid when on upload tab
+setInterval(() => {
+  if (document.getElementById('tab-upload').classList.contains('active')) renderUploadGrid();
+}, 1500);
+
+loadEvents();
+pollUploadSettings();
+setInterval(pollUploadSettings, 5000);
+</script>
+</body>
+</html>
