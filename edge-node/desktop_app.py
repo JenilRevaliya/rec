@@ -13,6 +13,67 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt6.QtGui import QImage, QPixmap, QFont, QIcon, QPainter, QColor, QPen
+from camera.detector import detect_available_cameras
+
+from ultralytics import YOLO
+import mediapipe as mp
+import math
+
+def compute_bbox_iou(boxA, boxB):
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+    interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+    boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
+    boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+    iou = interArea / float(boxAArea + boxBArea - interArea)
+    return iou
+
+def get_blur_score(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    return cv2.Laplacian(gray, cv2.CV_64F).var()
+
+def crop_with_padding(image, bbox, padding_pct=0.1):
+    h, w = image.shape[:2]
+    x1, y1, x2, y2 = bbox
+    bw, bh = x2 - x1, y2 - y1
+    px, py = int(bw * padding_pct), int(bh * padding_pct)
+    return image[max(0, y1-py):min(h, y2+py), max(0, x1-px):min(w, x2+px)]
+
+def compute_framing_box(person_bbox, frame_w, frame_h, aspect_ratio="4:3", framing_scale="AUTO", keypoints=None, clamp_to_sensor=False):
+    x1, y1, x2, y2 = person_bbox
+    bw, bh = x2 - x1, y2 - y1
+    scale_factor = 1.3
+    if framing_scale == "AUTO" and keypoints is not None and len(keypoints) > 0:
+        face_kpts = keypoints[:5]
+        if np.mean([k[2] for k in face_kpts]) > 0.3: scale_factor = 1.8 
+        else: scale_factor = 1.2
+    target_h = int(bh * scale_factor)
+    target_w = int(target_h * (4/3))
+    cx, cy = int(x1 + bw/2), int(y1 + bh/2)
+    if keypoints is not None and len(keypoints) > 0 and keypoints[0][2] > 0.3:
+        cy = int(y1 + (keypoints[0][1] - y1) * 0.8)
+    nx1, ny1 = cx - target_w//2, cy - target_h//2
+    nx2, ny2 = nx1 + target_w, ny1 + target_h
+    if clamp_to_sensor:
+        nx1, ny1 = max(0, nx1), max(0, ny1)
+        nx2, ny2 = min(frame_w, nx2), min(frame_h, ny2)
+    return [nx1, ny1, nx2, ny2]
+
+def compute_composition_score(person_bbox, frame_bbox, keypoints=None):
+    px1, py1, px2, py2 = person_bbox
+    fx1, fy1, fx2, fy2 = frame_bbox
+    if px1 < fx1 or py1 < fy1 or px2 > fx2 or py2 > fy2: return 0.1
+    score = 1.0
+    if keypoints is not None and len(keypoints) > 0:
+        nose = keypoints[0]
+        if nose[2] > 0.3:
+            grid_y = fy1 + (fy2 - fy1) * 0.33
+            dist = abs(nose[1] - grid_y)
+            score -= (dist / (fy2 - fy1)) * 1.5
+    return max(0.0, min(1.0, score))
+
 
 # ─────────────────────────────────────────────────────────────────
 # Global Config
@@ -79,16 +140,54 @@ QFrame.box {
 # Threads
 # ─────────────────────────────────────────────────────────────────
 
-class CameraPreviewThread(QThread):
-    change_pixmap_signal = pyqtSignal(np.ndarray)
 
+class AIEngineThread(QThread):
+    change_pixmap_signal = pyqtSignal(np.ndarray)
+    status_update = pyqtSignal(str)
+    
     def __init__(self, camera_id):
         super().__init__()
         self.camera_id = camera_id
         self._run_flag = True
+        self.ai_active = False
+        self.req_smile = False
+        self.req_thumbs = False
+        
+        self.yolo_model = None
+        self.mp = None
+        self.gesture_rec = None
+        self.face_rec = None
+        
+        self.frame_counter = 0
+        self.gesture_cache = {}
+        self.gesture_history = {}
+        self.last_optimal_bboxes = {}
+        self.capture_buffers = {}
+        self.cooldown_frames = 0
+        
+    def init_ai(self):
+        if self.yolo_model is not None: return
+        self.status_update.emit("Loading YOLOv8n-pose...")
+        self.yolo_model = YOLO('../yolov8n-pose.pt')
+        self.status_update.emit("Loading MediaPipe...")
+        import mediapipe as mp
+        self.mp = mp
+        BaseOptions = mp.tasks.BaseOptions
+        self.mp_image_format = mp.ImageFormat.SRGB
+        self.gesture_rec = mp.tasks.vision.GestureRecognizer.create_from_options(
+            mp.tasks.vision.GestureRecognizerOptions(
+                base_options=BaseOptions(model_asset_path='../model/gesture_recognizer.task'),
+                running_mode=mp.tasks.vision.RunningMode.IMAGE)
+        )
+        self.face_rec = mp.tasks.vision.FaceLandmarker.create_from_options(
+            mp.tasks.vision.FaceLandmarkerOptions(
+                base_options=BaseOptions(model_asset_path='../model/face_landmarker.task'),
+                running_mode=mp.tasks.vision.RunningMode.IMAGE,
+                output_face_blendshapes=True)
+        )
+        self.status_update.emit("AI Ready.")
 
     def run(self):
-        # Instantiate correct driver for preview
         if self.camera_id.startswith("MOCK"):
             from camera.mock import MockCameraDriver
             driver = MockCameraDriver(self.camera_id)
@@ -107,14 +206,191 @@ class CameraPreviewThread(QThread):
             try:
                 frame = driver.get_live_preview_frame()
                 if frame is not None:
-                    self.change_pixmap_signal.emit(frame)
+                    if self.ai_active:
+                        self.init_ai()
+                        display_frame = frame.copy()
+                        h, w = display_frame.shape[:2]
+                        self.frame_counter += 1
+                        if self.cooldown_frames > 0: self.cooldown_frames -= 1
+                        
+                        results = self.yolo_model.track(frame, persist=True, verbose=False, imgsz=480)
+                        optimal_found = False; captured_crop = None; captured_id = None
+                        
+                        for result in results:
+                            boxes = result.boxes
+                            if boxes is None or len(boxes) == 0: continue
+                            if result.keypoints is None: continue
+                            
+                            for i in range(len(boxes)):
+                                x1, y1, x2, y2 = boxes.xyxy[i].cpu().numpy()
+                                track_id = int(boxes.id[i].cpu().numpy()) if boxes.id is not None else -1
+                                if track_id == -1: continue
+                                
+                                kpts = result.keypoints.data[i].cpu().numpy()
+                                fb = compute_framing_box([int(x1), int(y1), int(x2), int(y2)], w, h, aspect_ratio="4:3", framing_scale="AUTO", keypoints=kpts, clamp_to_sensor=False)
+                                comp_score = compute_composition_score([int(x1), int(y1), int(x2), int(y2)], fb, kpts)
+                                person_crop = frame[max(0, int(y1)):min(h, int(y2)), max(0, int(x1)):min(w, int(x2))]
+                                
+                                if track_id not in self.gesture_cache: self.gesture_cache[track_id] = (False, 0.0, False, None, None)
+                                if track_id not in self.gesture_history: self.gesture_history[track_id] = {'smile': [], 'thumbs': []}
+                                
+                                is_smiling, s_score, is_thumbs, face_lms, hand_lms = self.gesture_cache[track_id]
+                                
+                                if self.frame_counter % 3 == 0:
+                                    raw_smile, s_score, raw_thumbs = False, 0.0, False
+                                    face_lms_cache, hand_lms_cache = None, None
+                                    if person_crop.size > 0:
+                                        try:
+                                            mp_image = self.mp.Image(image_format=self.mp_image_format, data=cv2.cvtColor(person_crop, cv2.COLOR_BGR2RGB))
+                                            if self.req_smile:
+                                                face_result = self.face_rec.detect(mp_image)
+                                                if face_result.face_blendshapes:
+                                                    face_lms_cache = face_result.face_landmarks[0] if face_result.face_landmarks else None
+                                                    for shape in face_result.face_blendshapes[0]:
+                                                        if shape.category_name in ['mouthSmileLeft', 'mouthSmileRight'] and shape.score > 0.45:
+                                                            raw_smile = True; s_score = shape.score * 100.0; break
+                                            if self.req_thumbs:
+                                                gesture_result = self.gesture_rec.recognize(mp_image)
+                                                if gesture_result.gestures and len(gesture_result.gestures) > 0:
+                                                    hand_lms_cache = gesture_result.hand_landmarks[0] if gesture_result.hand_landmarks else None
+                                                    for gesture in gesture_result.gestures[0]:
+                                                        if gesture.category_name == 'Thumb_Up' and gesture.score > 0.5:
+                                                            raw_thumbs = True; break
+                                        except Exception as e: print(e)
+                                        
+                                    self.gesture_history[track_id]['smile'].append(raw_smile)
+                                    self.gesture_history[track_id]['thumbs'].append(raw_thumbs)
+                                    if len(self.gesture_history[track_id]['smile']) > 4:
+                                        self.gesture_history[track_id]['smile'].pop(0)
+                                        self.gesture_history[track_id]['thumbs'].pop(0)
+                                    is_smiling = sum(self.gesture_history[track_id]['smile']) >= 3
+                                    is_thumbs = sum(self.gesture_history[track_id]['thumbs']) >= 3
+                                    self.gesture_cache[track_id] = (is_smiling, s_score, is_thumbs, face_lms_cache, hand_lms_cache)
+
+                                is_optimal = (comp_score >= 0.70)
+                                alerts = []
+                                
+                                meets_requirements = False
+                                if not self.req_smile and not self.req_thumbs: meets_requirements = True
+                                else:
+                                    if self.req_smile and self.req_thumbs and is_smiling and is_thumbs: meets_requirements = True
+                                    if self.req_smile and not self.req_thumbs and is_smiling: meets_requirements = True
+                                    if self.req_thumbs and not self.req_smile and is_thumbs: meets_requirements = True
+                                    
+                                if not meets_requirements:
+                                    is_optimal = False
+                                    if self.req_smile and self.req_thumbs: alerts.append("WAITING: Smile OR Thumbs Up")
+                                    elif self.req_smile: alerts.append("WAITING: Smile")
+                                    elif self.req_thumbs: alerts.append("WAITING: Thumbs Up")
+                                    
+                                if self.cooldown_frames > 0:
+                                    alerts.append("COOLDOWN: Processing...")
+                                    is_optimal = False
+                                elif comp_score < 0.70:
+                                    body_cx, fb_cx = (x1 + x2)/2, (fb[0] + fb[2])/2
+                                    if body_cx < fb_cx - 30: alerts.append("REJECTED: Move Right ->")
+                                    elif body_cx > fb_cx + 30: alerts.append("REJECTED: <- Move Left")
+                                    else: alerts.append("REJECTED: Center Yourself")
+                                
+                                is_frontal = False
+                                if kpts is not None and len(kpts) > 4:
+                                    nose, le, re = kpts[0], kpts[1], kpts[2]
+                                    if nose[2]>0.3 and le[2]>0.3 and re[2]>0.3: is_frontal = True
+                                        
+                                if not is_frontal:
+                                    alerts.append("REJECTED: Face Not Frontal")
+                                    is_optimal = False
+                                    
+                                cfb = [int(fb[0]), int(fb[1]), int(fb[2]), int(fb[3])]
+                                raw_crop = crop_with_padding(frame, cfb)
+                                
+                                crop_blur = get_blur_score(raw_crop)
+                                exposure = np.mean(cv2.cvtColor(raw_crop, cv2.COLOR_BGR2GRAY)) if raw_crop.size > 0 else 127
+                                    
+                                if crop_blur < 150.0:
+                                    alerts.append("REJECTED: Blurry")
+                                    is_optimal = False
+                                elif exposure > 235:
+                                    alerts.append("REJECTED: Overexposed")
+                                    is_optimal = False
+                                elif exposure < 30:
+                                    alerts.append("REJECTED: Underexposed")
+                                    is_optimal = False
+                                    
+                                if track_id in self.last_optimal_bboxes:
+                                    iou = compute_bbox_iou(cfb, self.last_optimal_bboxes[track_id])
+                                    if iou > 0.85:
+                                        alerts.append("CHANGE POSE (Move around)")
+                                        is_optimal = False
+                                        
+                                if track_id not in self.capture_buffers: self.capture_buffers[track_id] = []
+                                self.capture_buffers[track_id].append({
+                                    "crop": raw_crop, "fb": cfb, "is_optimal": is_optimal,
+                                    "comp_score": comp_score, "smile_score": s_score if is_smiling else 0.0,
+                                    "blur_score": crop_blur
+                                })
+                                
+                                if len(self.capture_buffers[track_id]) > 10: self.capture_buffers[track_id].pop(0)
+                                
+                                buffer = self.capture_buffers[track_id]
+                                if len(buffer) >= 5 and self.cooldown_frames == 0:
+                                    recent = buffer[-5:]
+                                    if sum(1 for b in recent if b["is_optimal"]) >= 4 and recent[-1]["is_optimal"]:
+                                        best_frame = max(recent, key=lambda x: x["comp_score"] + (x["smile_score"] * 0.5) + (x["blur_score"] * 0.001))
+                                        alerts.append("CONSENSUS: Captured Best Frame!")
+                                        optimal_found = True
+                                        captured_id = track_id
+                                        captured_crop = best_frame["crop"]
+                                        self.last_optimal_bboxes[track_id] = best_frame["fb"]
+
+                                if is_smiling:
+                                    cv2.putText(display_frame, "SMILING :D", (int(x1), max(30, int(y1) - 10)), cv2.FONT_HERSHEY_DUPLEX, 1.2, (0, 255, 255), 3)
+                                    if face_lms:
+                                        for lm in face_lms:
+                                            cx, cy = int(lm.x * (x2 - x1) + x1), int(lm.y * (y2 - y1) + y1)
+                                            cv2.circle(display_frame, (cx, cy), 1, (203, 192, 255), -1)
+                                if is_thumbs:
+                                    cv2.putText(display_frame, "THUMBS UP!", (int(x1), max(70, int(y1) - 45)), cv2.FONT_HERSHEY_DUPLEX, 1.2, (255, 100, 100), 3)
+                                    if hand_lms:
+                                        pts = np.array([[int(lm.x * (x2 - x1) + x1), int(lm.y * (y2 - y1) + y1)] for lm in hand_lms], np.int32)
+                                        cv2.polylines(display_frame, [pts.reshape((-1, 1, 2))], True, (203, 192, 255), 2)
+                                        for pt in pts: cv2.circle(display_frame, tuple(pt), 4, (203, 192, 255), -1)
+
+                                if is_frontal:
+                                    box_color = (0, 255, 0) if is_optimal else (0, 0, 255)
+                                    if not is_optimal and ((self.req_smile and is_smiling) or (self.req_thumbs and is_thumbs)): box_color = (0, 255, 255)
+                                    cv2.rectangle(display_frame, (fb[0], fb[1]), (fb[2], fb[3]), box_color, 4)
+                                    y_offset = max(25, fb[1] + 25)
+                                    for alert in reversed(alerts):
+                                        color = (0, 255, 0) if "OPTIMAL" in alert else (0, 0, 255)
+                                        if "BLOCKED" in alert or "MOVE" in alert: color = (0, 165, 255)
+                                        (tw, th), _ = cv2.getTextSize(alert, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)
+                                        text_x = max(5, min(fb[0] + 5, w - tw - 5))
+                                        cv2.rectangle(display_frame, (text_x, y_offset - th - 5), (text_x + tw + 5, y_offset + 5), (0, 0, 0), -1)
+                                        cv2.putText(display_frame, alert, (text_x, y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                                        y_offset += 25
+
+                        if optimal_found and captured_id is not None and captured_crop is not None:
+                            if captured_crop.size > 0:
+                                import time as t
+                                filename = f"capture_{int(t.time())}_{captured_id}.jpg"
+                                path = os.path.join(BUFFER_DIR, filename)
+                                cv2.imwrite(path, captured_crop)
+                            self.cooldown_frames = 45
+                            self.capture_buffers[captured_id].clear()
+                            
+                        self.change_pixmap_signal.emit(display_frame)
+                    else:
+                        self.change_pixmap_signal.emit(frame)
+                        self.status_update.emit("AI Offline")
             except Exception as e:
                 print(f"Preview error: {e}")
-            time.sleep(0.06) # ~15 fps
+            time.sleep(0.06)
 
     def stop(self):
         self._run_flag = False
         self.wait()
+
 
 
 class BufferPollingThread(QThread):
@@ -300,7 +576,25 @@ class DashboardWindow(QMainWindow):
         left_layout.addWidget(self.state_label)
         
         # Controls
+
+        self.smile_toggle = QCheckBox("Require Smile")
+        self.thumbs_toggle = QCheckBox("Require Thumbs Up")
+        
+        def update_reqs():
+            if self.preview_thread:
+                self.preview_thread.req_smile = self.smile_toggle.isChecked()
+                self.preview_thread.req_thumbs = self.thumbs_toggle.isChecked()
+                
+        self.smile_toggle.stateChanged.connect(update_reqs)
+        self.thumbs_toggle.stateChanged.connect(update_reqs)
+        
         controls_layout = QHBoxLayout()
+        controls_layout.addWidget(self.smile_toggle)
+        controls_layout.addWidget(self.thumbs_toggle)
+        left_layout.addLayout(controls_layout)
+        
+        controls_layout = QHBoxLayout()
+
         self.cam_combo = QComboBox()
         self.cam_combo.setStyleSheet("padding: 5px; background: #333; color: white;")
         self.populate_cameras()
@@ -371,57 +665,25 @@ class DashboardWindow(QMainWindow):
 
     def populate_cameras(self):
         """Scan for available cameras."""
-        cameras = ["MOCK_CAM_01", "DSLR_01"]
-        # Scan for local webcams (0 to 3)
-        for i in range(4):
-            cap = cv2.VideoCapture(i)
-            if cap.isOpened():
-                cameras.append(f"Webcam_{i}")
-                cap.release()
-        self.cam_combo.addItems(cameras)
+        cameras = detect_available_cameras()
+        self.cam_combo.clear()
+        for cam in cameras:
+            self.cam_combo.addItem(cam.get("label", cam["id"]), userData=cam["id"])
 
     def start_preview(self):
         if self.preview_thread:
             self.preview_thread.stop()
         
-        self.preview_thread = CameraPreviewThread(self.cam_combo.currentText())
+        cam_id = self.cam_combo.currentData() or self.cam_combo.currentText()
+        self.preview_thread = CameraPreviewThread(cam_id)
         self.preview_thread.change_pixmap_signal.connect(self.update_image)
         self.preview_thread.start()
         
+
     def update_image(self, cv_img):
-        # Read state to draw boxes
-        state_file = "/tmp/rec_state.json"
-        
-        if self.orchestrator_process and os.path.exists(state_file):
-            try:
-                with open(state_file, "r") as f:
-                    state = json.load(f)
-                
-                # Update status label
-                gini = state.get("gini", 0)
-                idle = state.get("global_idle", 0)
-                msg = f"Global Idle: {idle:.1f}s | Fairness Gini: {gini:.2f}"
-                if state.get("dancing"): msg += " [DANCE BURST MODE]"
-                self.state_label.setText(msg)
-                
-                # Draw boxes
-                for p in state.get("pids", []):
-                    x1, y1, x2, y2 = p["bbox"]
-                    color_tup = p.get("color", (0, 255, 0)) # BGR
-                    # Draw rect
-                    cv2.rectangle(cv_img, (x1, y1), (x2, y2), color_tup, 2)
-                    
-                    # Draw text background
-                    label = f"{p['status']}: {p['reason']}"
-                    (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-                    cv2.rectangle(cv_img, (x1, y1 - 20), (x1 + w, y1), color_tup, -1)
-                    # Draw text
-                    cv2.putText(cv_img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,0,0) if sum(color_tup)>300 else (255,255,255), 1)
-            except Exception as e:
-                pass
-                
         qt_img = self.convert_cv_qt(cv_img)
         self.feed_label.setPixmap(qt_img)
+
         
     def convert_cv_qt(self, cv_img):
         rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
@@ -516,33 +778,21 @@ class DashboardWindow(QMainWindow):
             pixmap.save(target_path, "JPG")
             print(f"Manual capture saved to {target_path}")
 
+
     def toggle_orchestrator(self):
-        if self.orchestrator_process:
-            if self.orchestrator_process.poll() is None:
-                # It's running, so stop it
-                self.orchestrator_process.terminate()
-                self.orchestrator_process = None
+        if self.preview_thread:
+            self.preview_thread.ai_active = not self.preview_thread.ai_active
+            if self.preview_thread.ai_active:
+                self.toggle_orch_btn.setText("STOP CAPTURE AI")
+                self.toggle_orch_btn.setStyleSheet("background-color: #ff6b6b; border-color: #ff6b6b; color: white;")
+                
+                # Setup Toggles
+                self.preview_thread.req_smile = getattr(self, 'smile_toggle', QCheckBox("Require Smile")).isChecked()
+                self.preview_thread.req_thumbs = getattr(self, 'thumbs_toggle', QCheckBox("Require Thumbs Up")).isChecked()
+            else:
                 self.toggle_orch_btn.setText("START CAPTURE AI")
                 self.toggle_orch_btn.setStyleSheet("")
-                print("Orchestrator stopped.")
-            else:
-                self.orchestrator_process = None # Clear dead process
-        else:
-            # Start it
-            env = os.environ.copy()
-            env["EDGE_API_TOKEN"] = self.token
-            env["REC_CAMERA_ID"] = self.cam_combo.currentText()
-            
-            # Start python module orchestrator.main
-            project_root = os.path.dirname(os.path.abspath(__file__))
-            self.orchestrator_process = subprocess.Popen(
-                [sys.executable, "-m", "orchestrator.main"],
-                env=env,
-                cwd=project_root
-            )
-            self.toggle_orch_btn.setText("STOP CAPTURE AI")
-            self.toggle_orch_btn.setStyleSheet("background-color: #ff6b6b; border-color: #ff6b6b; color: white;")
-            print("Orchestrator started.")
+
 
     def closeEvent(self, event):
         if self.orchestrator_process:

@@ -3,60 +3,133 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>REC Edge - Login</title>
+    <title>REC Edge - Authenticate</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Neobrutalism styling for the edge dashboard */
+        /* UI-UX Pro Max: Authentic Neomorphism (Soft UI) */
+        :root {
+            --bg: #E0E5EC;
+            --text-dark: #2D3748;
+            --text-muted: #718096;
+            --shadow-light: #ffffff;
+            --shadow-dark: #a3b1c6;
+            --accent: #E0E5EC; /* Monochromatic emphasis */
+        }
+        
         body {
-            background-color: #fdfbf7;
-            font-family: 'Courier New', Courier, monospace;
+            background-color: var(--bg);
+            color: var(--text-dark);
+            font-family: 'Inter', -apple-system, sans-serif;
+            margin: 0;
+            overflow: hidden;
         }
-        .neo-box {
-            border: 3px solid #000;
-            box-shadow: 6px 6px 0px #000;
-            background-color: white;
-            transition: all 0.2s ease-in-out;
+
+        /* Pro-Max Neomorphic Extrusion (Outward) */
+        .neo-surface {
+            background-color: var(--bg);
+            border-radius: 40px; /* Highly rounded, almost pill/circular */
+            box-shadow: 9px 9px 16px var(--shadow-dark), 
+                       -9px -9px 16px var(--shadow-light);
+            transition: all 0.3s ease;
         }
+
+        /* Pro-Max Neomorphic Impression (Inward/Input) */
+        .neo-inset {
+            background-color: var(--bg);
+            border-radius: 9999px; /* Pill shape */
+            box-shadow: inset 6px 6px 10px var(--shadow-dark), 
+                       inset -6px -6px 10px var(--shadow-light);
+            border: none;
+            color: var(--text-dark);
+        }
+        .neo-inset:focus {
+            outline: none;
+            box-shadow: inset 8px 8px 12px var(--shadow-dark), 
+                       inset -8px -8px 12px var(--shadow-light);
+        }
+
+        /* Pro-Max Neomorphic Button */
         .neo-button {
-            background-color: #fca311;
-            border: 3px solid #000;
-            box-shadow: 4px 4px 0px #000;
-            font-weight: bold;
+            background-color: var(--bg);
+            border-radius: 9999px; /* Pill shape */
+            box-shadow: 7px 7px 14px var(--shadow-dark), 
+                       -7px -7px 14px var(--shadow-light);
+            color: var(--text-dark);
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            border: none;
+        }
+        .neo-button:hover {
+            box-shadow: 4px 4px 10px var(--shadow-dark), 
+                       -4px -4px 10px var(--shadow-light);
+            transform: scale(0.98);
         }
         .neo-button:active {
-            transform: translate(4px, 4px);
-            box-shadow: 0px 0px 0px #000;
+            box-shadow: inset 5px 5px 10px var(--shadow-dark), 
+                       inset -5px -5px 10px var(--shadow-light);
+            transform: scale(0.95);
         }
+
+        /* Entry Animations */
+        @keyframes fadeSlideUp {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        .animate-enter {
+            animation: fadeSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        
+        .stagger-1 { animation-delay: 0.1s; }
+        .stagger-2 { animation-delay: 0.2s; }
+        .stagger-3 { animation-delay: 0.3s; }
     </style>
 </head>
-<body class="h-screen w-full flex items-center justify-center p-4">
+<body class="h-screen w-full flex items-center justify-center p-6">
 
-    <div class="neo-box max-w-md w-full p-8 rounded-lg flex flex-col items-center">
-        <h1 class="text-3xl font-black mb-2 uppercase tracking-tighter">REC Edge Node</h1>
-        <p class="text-sm font-bold mb-8 uppercase text-gray-600">Photographer Local Gateway</p>
+    <!-- Decorative Circular Elements -->
+    <div class="fixed top-10 left-10 w-32 h-32 rounded-full neo-surface opacity-50 pointer-events-none"></div>
+    <div class="fixed bottom-20 right-20 w-48 h-48 rounded-full neo-surface opacity-50 pointer-events-none"></div>
+
+    <div class="neo-surface max-w-md w-full p-12 flex flex-col items-center z-10 animate-enter">
+        
+        <!-- Logo Replacement (Circular) -->
+        <div class="w-20 h-20 rounded-full neo-surface flex items-center justify-center mb-8">
+            <svg class="w-8 h-8 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path>
+            </svg>
+        </div>
+
+        <h1 class="text-2xl font-extrabold mb-1 tracking-tight animate-enter stagger-1">REC Edge Gateway</h1>
+        <p class="text-sm font-medium mb-10 text-gray-500 tracking-wide animate-enter stagger-1">Photographer Access Terminal</p>
         
         {% if error %}
-        <div class="bg-red-200 border-2 border-black w-full p-3 mb-6 text-sm font-bold">
-            ⚠️ {{ error }}
+        <div class="w-full text-center py-2 px-4 rounded-full text-red-500 font-semibold mb-6 animate-enter" style="box-shadow: inset 3px 3px 6px #d1d9e6, inset -3px -3px 6px #ffffff;">
+            {{ error }}
         </div>
         {% endif %}
 
-        <form action="/login" method="POST" class="w-full space-y-5">
-            <div>
-                <label class="block font-bold mb-2 uppercase text-sm">Photographer ID</label>
-                <input type="text" name="email" required class="w-full p-3 border-2 border-black focus:outline-none focus:ring-2 focus:ring-black" placeholder="admin@rec.com" value="admin">
+        <form action="/login" method="POST" class="w-full space-y-6 animate-enter stagger-2">
+            <div class="w-full">
+                <input type="text" name="email" required class="neo-inset w-full py-4 px-6 text-sm font-medium" placeholder="Photographer ID (e.g., photographer1)" value="photographer1">
             </div>
             
-            <div>
-                <label class="block font-bold mb-2 uppercase text-sm">Password</label>
-                <input type="password" name="password" required class="w-full p-3 border-2 border-black focus:outline-none focus:ring-2 focus:ring-black" placeholder="••••••••" value="admin">
+            <div class="w-full">
+                <input type="password" name="password" required class="neo-inset w-full py-4 px-6 text-sm font-medium" placeholder="Password" value="password">
             </div>
             
-            <button type="submit" class="neo-button w-full py-4 mt-4 uppercase tracking-widest text-lg">Authenticate & Connect</button>
+            <button type="submit" class="neo-button w-full py-4 mt-8 uppercase text-sm animate-enter stagger-3">
+                Authenticate
+            </button>
         </form>
         
-        <div class="mt-8 text-xs font-bold text-gray-500 uppercase flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse block"></span> Secure Edge-to-Cloud Link Active
+        <div class="mt-12 text-xs font-bold text-gray-400 flex items-center gap-3 animate-enter stagger-3">
+            <div class="w-3 h-3 rounded-full neo-surface relative flex items-center justify-center">
+                <div class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
+            </div>
+            SECURE LINK STANDBY
         </div>
     </div>
 

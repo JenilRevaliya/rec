@@ -20,8 +20,15 @@ class WebcamDriver(CameraDriver):
         if not self.cap.isOpened():
             print(f"[Webcam] Failed to connect to index {self.cam_index}")
             return False
+        
+        # Zero-latency configuration: avoid driver frame buffering
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        self.cap.set(cv2.CAP_PROP_FPS, 30)
+        
         self.connected = True
-        print(f"[Webcam] Connected to {self.camera_id}")
+        print(f"[Webcam] Connected to {self.camera_id} at index {self.cam_index}")
         return True
 
     def get_live_preview_frame(self) -> np.ndarray:

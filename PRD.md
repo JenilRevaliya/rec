@@ -30,6 +30,9 @@
    - 5.8 Post-Capture Face Detection & Embedding Pipeline
    - 5.9 Face Clustering & Identity Graph
    - 5.10 User Portal & Selfie-Match Retrieval
+   - 5.11 Photographer Edge Dashboard
+   - 5.12 Event Sharing & Access Control
+   - 5.13 Model Training & Domain Specialization
 6. [Tech Stack](#6-tech-stack)
 7. [Photography Intelligence Rules](#7-photography-intelligence-rules)
 8. [Data Models & Schema](#8-data-models--schema)
@@ -1237,21 +1240,301 @@ To prevent users from uploading photos of others:
 ### 5.11 Photographer Edge Dashboard (Local App Interface)
 
 #### 5.11.1 Purpose
-Provides photographers with a local, zero-latency interface running directly on their edge laptop. It orchestrates camera connection, real-time curation, and cloud sync policies before processing starts.
 
-#### 5.11.2 Authentication & Boot Flow
-1. **Local App Launch:** The photographer opens the REC app on their laptop. The app launches a local Python server (Edge Node) and automatically opens a `localhost` dashboard in the default browser.
-2. **Hardened Login:** The dashboard presents a login screen. Credentials are encrypted and sent to the Auth DB (Cloud).
-3. **Execution Gate:** **Only** upon successful authentication will the underlying Python capture and tracking scripts be permitted to execute. Unauthorized access keeps the hardware orchestration layer disabled.
+Provides photographers with a local, zero-latency interface running directly on their edge laptop. It orchestrates camera connection, real-time AI-annotated live preview, person tracking visualization, digital PTZ zoom, manual capture overrides, and cloud sync policies. The system uses a **dual-process architecture**: a lightweight PyQt6 system launcher that boots the edge server and a full-featured browser-based dashboard served on `localhost`.
 
-#### 5.11.3 Dashboard Capabilities
-- **Camera Mount & Connect:** UI prompts to select the detected USB camera. Once selected, the UI instructs the user to mount the camera on the tripod.
-- **Live Feed Grid:** The dashboard displays a low-latency live video feed from the connected camera.
-- **Real-time Capture Grid:** Directly beneath the live feed, automatically captured photos appear in a real-time grid.
-- **Manual Curation:** Photographers can discard bad photos or manually keep good ones via the grid interface before they are permanently stored/synced.
-- **Cloud Upload Toggle:**
-  - **Toggled ON (Real-Time Mode):** Captured photos are immediately uploaded to the cloud under the photographer's account. Face processing and embedding extraction start instantly.
-  - **Toggled OFF (Local-Only Mode):** Photos are stored locally on the laptop's SSD with zero data loss. The photographer can upload the bulk batch later (e.g., when reaching a better WiFi connection).
+#### 5.11.2 Dual-Process Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                    EDGE NODE LAUNCH SEQUENCE                         │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌──────────────────────────────────────┐                            │
+│  │  PROCESS 1: PyQt6 LAUNCHER           │                            │
+│  │  (desktop_app.py — Minimal Dialog)   │                            │
+│  │                                      │                            │
+│  │  • Displays REC logo + status        │                            │
+│  │  • Shows "System Running" indicator  │                            │
+│  │  • Provides "Open Dashboard" button  │                            │
+│  │    → opens http://localhost:5000      │                            │
+│  │  • System tray icon with quick       │                            │
+│  │    actions (Stop / Open / Quit)      │                            │
+│  │  • Spawns FastAPI server as child    │                            │
+│  │    process on startup                │                            │
+│  └────────────────┬─────────────────────┘                            │
+│                   │ subprocess.Popen(uvicorn)                        │
+│                   ▼                                                   │
+│  ┌──────────────────────────────────────┐                            │
+│  │  PROCESS 2: FastAPI EDGE SERVER      │                            │
+│  │  (dashboard/server.py — Port 5000)   │                            │
+│  │                                      │                            │
+│  │  • Serves HTML/CSS/JS dashboard      │                            │
+│  │  • Handles authentication against    │                            │
+│  │    cloud Auth DB (live API check)    │                            │
+│  │  • Spawns/controls Orchestrator      │                            │
+│  │  • Streams annotated MJPEG frames    │                            │
+│  │  • Exposes REST API for all controls │                            │
+│  │  • Runs background cloud sync task   │                            │
+│  └──────────────────────────────────────┘                            │
+│                                                                      │
+│  Browser (localhost:5000) ◄── Photographer interacts here            │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+**Why dual-process?**
+- The PyQt6 launcher is intentionally minimal (~100 LOC). Its sole job is to ensure the edge server is alive, display the REC branding, and provide a single-click route to the browser dashboard. It never renders complex UI, camera feeds, or interactive controls.
+- The browser dashboard handles all rich interaction. This allows the photographer to use any device on the same LAN (tablet, phone, second laptop) to monitor the capture session. It also eliminates PyQt6 rendering overhead on the frame pipeline, keeping the AI orchestrator's CPU budget intact.
+
+#### 5.11.3 Authentication & Execution Gate
+
+The dashboard enforces a **strict authentication gate** before any hardware or AI systems are permitted to execute:
+
+```
+┌──────────┐     POST /login        ┌──────────────────┐
+│ Browser  │ ──────────────────────► │  Edge Server     │
+│ Login    │     (email, password)   │  (FastAPI)       │
+│ Form     │                        │                  │
+│          │                        │  ┌──────────────┐│
+│          │                        │  │ Cloud Auth   ││
+│          │                        │  │ API Check    ││
+│          │ ◄──────────────────── │  │ (live POST   ││
+│          │     Set-Cookie:        │  │  to DB)      ││
+│          │     edge_token=JWT     │  └──────┬───────┘│
+│          │                        │         │        │
+│          │                        │  IF 200 → Unlock │
+│          │                        │  IF 401 → Block  │
+└──────────┘                        └──────────────────┘
+
+EXECUTION GATE RULES:
+1. The Orchestrator subprocess will NOT be spawned until authentication succeeds.
+2. Camera hardware will NOT be accessed until authentication succeeds.
+3. The /dashboard route returns HTTP 302 → /login if no valid edge_token cookie exists.
+4. Sandbox bypass: credentials "photographer1" / "password" bypass the cloud check
+   for offline development only. This bypass is disabled in production builds.
+```
+
+#### 5.11.4 Live Camera Feed — MJPEG Streaming with AI Annotations
+
+The dashboard displays a **real-time, AI-annotated camera feed** directly in the browser. The Orchestrator burns detection overlays onto each frame before writing it to a shared buffer, which the FastAPI server streams as MJPEG to the browser `<img>` tag.
+
+**Frame Pipeline:**
+
+```
+Camera (OpenCV) → YOLOv8n Detection → ByteTrack Tracking
+    → Engagement Scoring → Draw Overlays → cv2.imencode('.jpg')
+    → Write to /tmp/rec_frame.jpg → FastAPI serves as StreamingResponse
+    → Browser <img> polls at ~15 FPS via cache-bust query param
+```
+
+**Overlay Specification — Color-Coded Person Tracking Ellipses:**
+
+The system draws **elliptical (oval) overlays** around each tracked person instead of rectangular bounding boxes. Ellipses are computationally cheaper to render, visually less intrusive on the live feed, and better approximate the human silhouette.
+
+| Color | Status | Meaning | Visual |
+|---|---|---|---|
+| 🟢 **Green** | `READY` | Person is engaged, sustained, and the system will capture or has just captured | Solid green ellipse, 2px stroke |
+| 🟡 **Yellow** | `ANALYZING` | Person detected and being evaluated. Engagement sustain counter is building | Dashed yellow ellipse, 1px stroke |
+| 🔴 **Red** | `COOLDOWN` | Person was recently captured. In cooldown period, will not be re-captured | Solid red ellipse, 1px stroke, dimmed |
+| 🟠 **Orange** | `IGNORING` | Person is facing away, too small, or engagement score is below threshold | Dotted orange ellipse, 1px stroke |
+
+**Overlay Label Format:**
+Above each ellipse, a compact text label displays:
+```
+[STATUS]: [REASON]
+Examples:
+  "READY: Priority 2.45"
+  "COOLDOWN: Wait 12.3s"
+  "ANALYZING: Holding (3/10)"
+  "IGNORING: Low Eng (0.32 < 0.65)"
+```
+
+**Capture Flash Effect:**
+When the AI triggers a capture, the browser UI performs a brief white-flash CSS animation on the live feed container (`opacity: 0 → 1 → 0` over 150ms). This simulates a camera flash and provides immediate visual confirmation to the photographer that a shot was taken without requiring them to check the capture grid.
+
+```css
+@keyframes capture-flash {
+  0%   { opacity: 0; }
+  30%  { opacity: 0.8; }
+  100% { opacity: 0; }
+}
+.flash-overlay {
+  position: absolute;
+  inset: 0;
+  background: white;
+  pointer-events: none;
+  animation: capture-flash 150ms ease-out;
+}
+```
+
+#### 5.11.5 Real-Time Person Tracking — ByteTrack Integration
+
+The Orchestrator uses **ByteTrack** (MIT license) as the primary multi-object tracker for frame-to-frame identity persistence. ByteTrack was selected over BoT-SORT for the live dashboard context because:
+
+1. **Speed:** ByteTrack uses pure IoU + Kalman filter association with zero CNN overhead. It adds <1ms per frame on CPU.
+2. **Static cameras:** Edge nodes use tripod-mounted cameras. ByteTrack excels in static-camera scenarios where camera-motion compensation (BoT-SORT's primary advantage) is unnecessary.
+3. **Low-confidence recovery:** ByteTrack's signature innovation is its two-stage association that recovers tracks using low-confidence detections, which is critical for event photography where people frequently turn sideways or are partially occluded by other guests.
+
+**Tracker Configuration (bytetrack.yaml):**
+```yaml
+tracker_type: bytetrack
+track_high_thresh: 0.5      # High-confidence detection threshold
+track_low_thresh: 0.1       # Low-confidence recovery threshold
+new_track_thresh: 0.6       # Minimum confidence to initialize new track
+track_buffer: 30            # Frames to keep lost tracks alive (~2s at 15 FPS)
+match_thresh: 0.8           # IoU threshold for association
+```
+
+**Track ID Lifecycle:**
+```
+New Detection (conf ≥ 0.6) → Assign Track ID → Active Tracking
+    ↓ (person occluded / exits frame)
+Lost Track → Keep in buffer for 30 frames (~2 seconds)
+    ↓ (re-detected with IoU match)
+Re-associated → Same Track ID preserved → Cooldowns/counts intact
+    ↓ (not re-detected within buffer)
+Track Evicted → PID removed from scene state
+```
+
+The **Persistent Identity System (PIS)** defined in Section 5.6 operates on top of ByteTrack, using OSNet appearance descriptors to survive longer re-entry gaps and cross-camera switches. For the live dashboard visualization, the ByteTrack local Track ID is sufficient for overlay rendering.
+
+#### 5.11.6 Digital PTZ — Software Zoom & Auto-Framing
+
+Even standard USB webcams and fixed-lens DSLRs gain **digital zoom and pan** capabilities through software-based Region-of-Interest (ROI) cropping. The system uses the detected person's bounding box to compute an optimal crop window that simulates physical PTZ movement.
+
+**How Digital Zoom Works:**
+
+```python
+def digital_ptz(frame, target_bbox, zoom_scale=1.5):
+    """
+    Simulates PTZ by cropping a Region of Interest around the target
+    and resizing it back to the output resolution.
+    """
+    h, w = frame.shape[:2]
+    tx1, ty1, tx2, ty2 = target_bbox
+
+    # Center the crop on the target person's centroid
+    cx, cy = (tx1 + tx2) // 2, (ty1 + ty2) // 2
+
+    # Compute crop dimensions (inversely proportional to zoom)
+    crop_w = int(w / zoom_scale)
+    crop_h = int(h / zoom_scale)
+
+    # Clamp to frame boundaries
+    x1 = max(0, cx - crop_w // 2)
+    y1 = max(0, cy - crop_h // 2)
+    x2 = min(w, x1 + crop_w)
+    y2 = min(h, y1 + crop_h)
+
+    # Crop and resize back to original resolution
+    roi = frame[y1:y2, x1:x2]
+    return cv2.resize(roi, (w, h), interpolation=cv2.INTER_LINEAR)
+```
+
+**Zoom Trigger Logic:**
+- The dashboard provides a zoom slider (1.0x to 3.0x) for manual photographer control.
+- **Auto-zoom** mode: When a single person is detected and is in `READY` state, the system automatically crops to ensure the person fills ~40% of the frame area. This produces tighter, more professional compositions even from a wide-angle webcam.
+- Zoom resets to 1.0x when multiple people are detected (to avoid losing subjects outside the crop).
+
+**Digital Pan Logic:**
+- When the tracked subject moves within the frame, the crop window follows their centroid with a smoothed offset (exponential moving average, α=0.15) to prevent jittery panning.
+- A dead zone of ±5% around frame center prevents micro-corrections.
+
+#### 5.11.7 Manual Shutter Button (Circular)
+
+The dashboard includes a prominent **circular shutter button** styled after professional camera interfaces:
+
+```
+┌─────────────────────────────────────────┐
+│              LIVE FEED                  │
+│                                         │
+│   ┌─────┐                               │
+│   │ 🟢  │  "READY: Priority 2.1"        │
+│   └─────┘                               │
+│                                         │
+│              ┌───────┐                   │
+│              │  ◉    │  ← Shutter Button │
+│              └───────┘                   │
+└─────────────────────────────────────────┘
+```
+
+**Behavior:**
+1. Clicking the shutter button immediately captures the current annotated frame from `/tmp/rec_frame.jpg`.
+2. The captured image is saved to the local SSD buffer (`/capture-buffer/manual_TIMESTAMP.jpg`).
+3. The live feed flashes white (150ms) to confirm the capture.
+4. The image appears instantly in the capture grid below.
+5. If Cloud Auto-Sync is ON, the image is queued for immediate upload.
+
+**Styling:** The button is rendered as a 64px white circle with a 3px dark border, centered below the live feed. On hover, the inner circle subtly pulses. On click, it briefly scales down (active state) to simulate a physical button press.
+
+#### 5.11.8 Capture Grid & Queue System
+
+Captured images (both AI-triggered and manual) appear in a **real-time scrolling grid** below the live feed:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  CAPTURE QUEUE                                    [SYNC: ON]│
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐  ┌─────┐    │
+│  │ 📷  │  │ 📷  │  │ 📷  │  │ 📷  │  │ 📷  │  │ 📷  │    │
+│  │     │  │     │  │     │  │     │  │     │  │     │    │
+│  │ ✓☁  │  │ ✓☁  │  │ ⏳☁  │  │ 🗑   │  │ 🗑   │  │ 🗑   │    │
+│  └─────┘  └─────┘  └─────┘  └─────┘  └─────┘  └─────┘    │
+│  ✓☁ = Uploaded    ⏳☁ = Pending    🗑 = Discard available   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Queue Lifecycle:**
+1. **Capture** → Image written to local SSD buffer.
+2. **Grid Hydration** → Buffer polling thread detects new file, emits to UI grid (2s interval).
+3. **Cloud Sync** → If toggle is ON, background task POSTs to `/upload` API endpoint. Upload status icon updates per-image (pending → uploaded).
+4. **Discard** → Photographer can hover any image and click "Discard" to delete from buffer. If already uploaded, the cloud copy is retained.
+
+#### 5.11.9 AI Telemetry Bar
+
+A compact telemetry strip displayed between the live feed and the capture grid provides real-time insight into the Orchestrator's internal state:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  IDLE: 4.2s  │  GINI: 0.28  │  MODE: Standard  │  PIDs: 3 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+| Metric | Source | Update Rate |
+|---|---|---|
+| **Idle** | Seconds since last global capture | 500ms |
+| **Gini** | Fairness coefficient (0.0 = perfect, 1.0 = monopoly) | 500ms |
+| **Mode** | Standard / Dance Burst / Ceremony / Watchdog | 500ms |
+| **PIDs** | Number of currently tracked persons | 500ms |
+
+#### 5.11.10 Cloud Auto-Sync Engine
+
+A background `asyncio` task runs continuously on the edge server. When the Cloud Auto-Sync toggle is ON, it:
+
+1. Scans the local SSD buffer (`/capture-buffer/`) for new image files every 2 seconds.
+2. For each new file not yet in the `UPLOADED_FILES` set:
+   - POSTs to `{CLOUD_API_URL}/upload` with `multipart/form-data` containing the image, event ID, and photographer username.
+   - On HTTP 200, marks the file as uploaded.
+   - On failure, retries on the next scan cycle (automatic retry with no data loss).
+3. Upload happens in a non-blocking thread to avoid stalling the MJPEG stream or API responses.
+
+**The uploaded images appear immediately on the photographer's web portal** (cloud-side), where face embedding extraction and clustering begin automatically. This means event attendees can start finding their photos via selfie-match **while the event is still ongoing**.
+
+#### 5.11.11 Lightweight Processing Constraints
+
+The dashboard visualization must not degrade the Orchestrator's inference performance. The following constraints are enforced:
+
+| Operation | Budget | Strategy |
+|---|---|---|
+| **Ellipse drawing** | <0.5ms per person | `cv2.ellipse()` — single OpenCV call per detection |
+| **Text rendering** | <0.2ms per label | `cv2.putText()` — no font rendering libraries |
+| **Frame JPEG encoding** | <3ms per frame | `cv2.imencode('.jpg', quality=70)` — reduced quality for stream |
+| **State JSON write** | <0.1ms | Atomic write to `/tmp/rec_state.json` |
+| **Browser poll interval** | 66ms (15 FPS) | `<img>` src swap with cache-bust timestamp |
+| **State API poll** | 500ms | Telemetry bar update (separate from frame stream) |
+
+**Total overhead per frame: <4ms** — well within the 66ms budget of a 15 FPS pipeline.
 
 ### 5.12 Event Sharing & Access Control
 
@@ -1272,8 +1555,174 @@ When **Private Mode** is selected, the system generates secure, embedded links w
 
 ---
 
+### 5.13 Model Training & Domain Specialization
 
-## 6. Tech Stack
+#### 5.13.1 Do We Need to Train Any Models?
+
+**Short answer: No for the core pipeline. Yes for domain-specific "key moment" triggers.**
+
+The REC system uses a layered model architecture. The decision on whether to train, fine-tune, or use off-the-shelf depends on each layer:
+
+| Layer | Model | Custom Training Needed? | Rationale |
+|---|---|---|---|
+| **Person Detection** | YOLOv8n (COCO pre-trained) | ❌ No | The COCO `person` class already achieves 80.4% mAP. People are the most heavily represented class in COCO. Works across all event types without modification. |
+| **Multi-Object Tracking** | ByteTrack | ❌ No | ByteTrack is a tracking algorithm (IoU + Kalman filter), not a learned model. It requires no training data. |
+| **Person Re-ID** | OSNet x0.25 | ❌ No (Phase 1) / ⚠️ Optional fine-tune (Phase 2) | Pre-trained OSNet achieves strong ReID on Market-1501. Fine-tuning on Indian clothing patterns (bright Navratri attire, wedding lehengas, cricket whites) could improve cross-camera re-identification by ~5-8%. |
+| **Face Embedding** | AuraFace v1 | ❌ No | AuraFace is trained on millions of faces. Fine-tuning would require an equally large, licensed dataset and risks degrading generalization. Use as-is. |
+| **Pose Estimation** | YOLOv8n-pose | ❌ No (for general use) / ✅ Yes (for cricket biomechanics) | The 17-point COCO skeleton is sufficient for engagement scoring (gaze, body openness). Cricket shot analysis requires custom keypoints (bat grip, elbow extension). |
+| **Action Recognition** | Custom Lightweight Classifier | ✅ Yes — New Model Required | No off-the-shelf model can detect domain-specific "key moments" (handshakes, trophy presentations, Garba spins, cricket shots). This is a **new, lightweight temporal classifier** trained on our data. |
+
+#### 5.13.2 The Key Moment Classifier (New Model)
+
+This is the **only new model** REC needs to train. It operates as a lightweight post-processing layer on top of the existing YOLO + ByteTrack pipeline.
+
+**Architecture:**
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                    KEY MOMENT CLASSIFICATION PIPELINE                 │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  YOLOv8n-pose (pre-trained, frozen)                                  │
+│  ├── Outputs: 17 keypoints per person (x, y, confidence)             │
+│  └── Runs at 15 FPS (already running for engagement scoring)         │
+│                                                                      │
+│  ┌──────────────────────────────────────────────────────────┐        │
+│  │  TEMPORAL FEATURE BUFFER (per tracked person)            │        │
+│  │  • Stores last 30 frames of keypoint sequences           │        │
+│  │  • Shape: (30, 17, 3) per person — ~6 KB per person      │        │
+│  └────────────────────┬─────────────────────────────────────┘        │
+│                       ▼                                              │
+│  ┌──────────────────────────────────────────────────────────┐        │
+│  │  LIGHTWEIGHT TEMPORAL CLASSIFIER                         │        │
+│  │  • Architecture: 2-layer GRU (64 hidden units)           │        │
+│  │  • Input: (30, 34) — 30 frames × 17 keypoints × 2 (x,y) │        │
+│  │  • Output: Action class probabilities                     │        │
+│  │  • Size: ~200 KB (.onnx)                                 │        │
+│  │  • Latency: <2ms per inference on CPU                    │        │
+│  └────────────────────┬─────────────────────────────────────┘        │
+│                       ▼                                              │
+│  Action: "handshake" (0.92) → TRIGGER: Priority boost + Burst mode   │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+**Action Classes (Multi-Event):**
+
+| Class | Events | Detection Method | Training Data Source |
+|---|---|---|---|
+| `handshake` | Weddings, Corporate, Sports | Wrist keypoints of two people within 40px for ≥10 frames | Manual annotation from event footage |
+| `trophy_presentation` | Sports, School | One person extends arms forward, other person receives object | Sports ceremony footage |
+| `garba_spin` | Navratri, Dance | Full-body rotation (>180° yaw change) in <1 second | Navratri event footage |
+| `dandiya_strike` | Navratri | Arm extension with high velocity + two-person proximity | Dandiya footage |
+| `cricket_shot` | Cricket | Batsman arm extension + bat-swing arc (>90° elbow angle change in <0.5s) | Cricket broadcast footage |
+| `bowling_action` | Cricket | Run-up + arm rotation (>270° shoulder angle change) | Cricket broadcast footage |
+| `stage_entry` | Weddings, Corporate | Person entering frame from side with 3+ people already facing them | Event footage |
+| `dancing_pair` | Weddings, Navratri | Two people with synchronized high-velocity limb movement | Dance event footage |
+| `group_photo_pose` | All | 3+ people standing still, facing camera, for ≥2 seconds | Any event footage |
+| `child_activity` | School, Sports Day | Small bounding box (<60% avg height) + high velocity movement | School event footage |
+
+**Training Strategy:**
+- **Data Collection:** Record 50+ hours across all target event types. Extract 30-frame clips centered on each key moment.
+- **Annotation:** Label each clip with the action class. Include "null" class clips (people standing, walking, talking) at 3:1 ratio to positive samples to minimize false positives.
+- **Training:** Train the 2-layer GRU classifier on the keypoint sequences. Freeze the YOLO backbone entirely — we only train the ~50K parameter temporal head.
+- **Export:** Export to ONNX for cross-platform CPU inference. The model is so small (~200 KB) it adds negligible overhead.
+
+#### 5.13.3 Domain-Specific Event Profiles
+
+Each event type requires different capture behavior, engagement thresholds, and key moment triggers. Instead of training separate YOLO models per domain, REC uses a **software-configurable Event Profile** that adjusts the Orchestrator's parameters:
+
+##### Profile: Cricket Stadium / Sports Ground
+
+| Parameter | Value | Rationale |
+|---|---|---|
+| **Detection confidence** | 0.50 | Outdoor, variable lighting, distant subjects |
+| **MIN_FACE_HEIGHT_PX** | 40 | Players are often far from camera |
+| **Engagement threshold** | 0.30 (lowered) | Players rarely face the camera directly; side profiles dominate |
+| **Key moments** | `cricket_shot`, `bowling_action`, `trophy_presentation`, `handshake` | Trigger burst capture (3 frames) on detection |
+| **Digital zoom** | Auto-zoom to 2.5x on batsman/bowler during action | Tight framing from stadium distance |
+| **Cooldown (batsman)** | 3s (reduced) | Action changes rapidly; multiple shots of same person are expected |
+| **Cooldown (spectators)** | 15s (standard) | Spectator capture follows normal diversity rules |
+| **Special rule** | Split frame into "field zone" and "stands zone". Apply different engagement thresholds per zone | Ensures both player action and crowd reactions are captured |
+| **Pose model** | YOLOv8n-pose | Required for cricket shot / bowling action classification |
+
+##### Profile: Dance Events / Navratri / Garba
+
+| Parameter | Value | Rationale |
+|---|---|---|
+| **Detection confidence** | 0.40 | Dynamic lighting (strobes, colored lights), motion blur |
+| **Shutter speed override** | 1/500s minimum | Freeze fast Garba/Dandiya spins |
+| **ISO override** | Auto-ISO up to 6400 | Compensate for low-light + fast shutter |
+| **Engagement threshold** | 0.20 (very low) | Everyone is "engaged" — they're all dancing |
+| **Burst mode** | Always ON | High-velocity movement demands multi-frame capture; IQG selects sharpest |
+| **Key moments** | `garba_spin`, `dandiya_strike`, `dancing_pair` | Trigger burst capture on detection |
+| **Cooldown** | 5s (reduced) | Costumes change appearance rapidly; faster re-capture is acceptable |
+| **Digital zoom** | Disabled | Wide-angle preferred to capture group formations and circular patterns |
+| **Special rule** | Increase JPEG quality to 95% for costume detail. Enable upper-body color histogram refresh every 30 frames (clothing patterns change under colored lighting) | Preserves vibrant Navratri attire details |
+| **Crowd safety** | If >50 people detected in frame, switch to "crowd mode" — capture wide establishing shots every 60s | Prevents CPU overload from tracking too many individuals |
+
+##### Profile: School Events / Sports Day / Kindergarten
+
+| Parameter | Value | Rationale |
+|---|---|---|
+| **Detection confidence** | 0.55 | Controlled environment, good lighting |
+| **MIN_FACE_HEIGHT_PX** | 40 (reduced from 80) | Children are physically smaller; standard thresholds miss them |
+| **MIN_BBOX_AREA_PX** | 1500 (reduced from 2500) | Smaller bounding boxes for children |
+| **Height class override** | Treat all subjects <65% of average bbox height as "child" | Activates child-specific capture rules |
+| **Engagement threshold** | 0.25 (lowered) | Children rarely hold still or face the camera; candid-dominant |
+| **Key moments** | `child_activity`, `trophy_presentation`, `group_photo_pose` | Sports Day race finishes, prize distribution |
+| **Candid ratio** | 90/10 (heavily candid) | Professional school photography is almost entirely candid |
+| **Cooldown** | 10s | Standard; ensures variety across all children |
+| **Gini target** | ≤0.25 (stricter than default 0.35) | Critical that every child gets captured; parents expect photos of their child |
+| **Special rule** | If a child PID has 0 captures after 120s of visibility, force-capture immediately regardless of engagement score | No-child-left-behind guarantee |
+| **Privacy** | EXIF metadata stripping enabled. All uploads tagged as "minor_present=true" for cloud-side consent enforcement | Compliance with child photography regulations |
+
+##### Profile: Weddings & Formal Events
+
+| Parameter | Value | Rationale |
+|---|---|---|
+| **Detection confidence** | 0.50 | Mixed indoor/outdoor, variable lighting |
+| **Engagement threshold** | 0.55 (standard) | Guests frequently face camera; natural engagement is high |
+| **Key moments** | `handshake`, `stage_entry`, `trophy_presentation`, `dancing_pair`, `group_photo_pose` | VIP arrivals, garland ceremony, ring exchange, first dance |
+| **Stage detection** | If a single PID remains stationary at the top-center of frame for >30s, classify as "stage performer". Lower cooldown to 5s. Increase burst frequency | Captures speakers, performers, and the couple on stage |
+| **VIP priority** | If a PID receives >5 handshakes within 5 minutes, boost their priority by 2.0x for the next 10 minutes | The person being greeted is likely the bride/groom or VIP guest |
+| **Interaction mode** | CANDID_BEHIND enabled | Capture guests talking to each other, not just facing camera |
+| **Guest rotation** | Starvation detector activates at 45s (reduced from 60s) | Weddings have many guests; faster rotation ensures coverage |
+| **Digital zoom** | Auto-zoom on stage area when only 1-2 people detected. Wide-angle for group photos | Tight framing for stage events, wide for baarat/reception |
+| **Special rule** | "Golden Hour" detection: If outdoor and time is 30min before sunset, boost exposure compensation +0.5 EV and increase ISO tolerance | Warm lighting for outdoor wedding portraits |
+
+#### 5.13.4 Training Data Requirements Summary
+
+| Model | Training Needed | Data Volume | Annotation Cost | Timeline |
+|---|---|---|---|---|
+| **YOLOv8n (person detection)** | None | N/A | N/A | Ready now |
+| **ByteTrack** | None | N/A | N/A | Ready now |
+| **AuraFace v1** | None | N/A | N/A | Ready now |
+| **YOLOv8n-pose** | None (COCO 17-point) | N/A | N/A | Ready now |
+| **Key Moment Classifier (GRU)** | ✅ Custom training | 50+ hours video, ~10K labeled clips | ~40 hours annotation | 2-3 weeks |
+| **OSNet fine-tune (optional)** | ⚠️ Optional | 5K+ images of Indian event attire | ~10 hours annotation | 1 week |
+
+#### 5.13.5 Model Deployment Strategy
+
+All models run on the edge node. No cloud inference is required during capture:
+
+```
+Edge Node Model Stack (Total: ~25 MB)
+├── yolov8n.pt            (6.2 MB)  — Person detection
+├── yolov8n-pose.pt       (6.4 MB)  — Pose estimation (optional per profile)
+├── bytetrack.yaml        (1 KB)    — Tracker config (no model weights)
+├── osnet_x0_25.pth       (2.2 MB)  — Re-ID appearance (optional)
+├── key_moment_gru.onnx   (200 KB)  — Action recognition
+└── Total inference budget: ~45ms/frame on M1 CPU
+    ├── YOLO detection:     ~25ms
+    ├── Pose estimation:    ~12ms (if enabled)
+    ├── ByteTrack:          ~1ms
+    ├── Engagement scoring: ~2ms
+    ├── Key moment GRU:     ~2ms
+    └── Overlay rendering:  ~3ms
+```
+
+---
 
 ### 6.1 Complete Technology Matrix
 
@@ -1649,7 +2098,351 @@ POSED_TARGET_RATIO           = 0.30
 
 ---
 
-## 8. Data Models & Schema
+### 7.13 Retroactive Frame Backtracking (Ring Buffer Capture)
+
+#### 7.13.1 The Problem
+
+Real-time AI capture systems are inherently **reactive**: they can only trigger the shutter *after* detecting a worthy moment. This creates a fundamental timing gap:
+
+```
+Timeline:  ──────────────────────────────────────────────►
+                    │                    │
+               Moment Occurs      AI Detects It
+               (handshake,         (50-100ms later)
+                garba spin,
+                child runs)
+                    │ ◄── MISSED ──► │
+                    │   ~3-6 frames  │
+                    │   at 15 FPS    │
+```
+
+Even at a perfect 15 FPS pipeline with <50ms inference latency, the shutter fires 3-6 frames *after* the peak moment. For fast actions (handshakes, dance spins, cricket shots), the peak is already past. The resulting capture shows the *aftermath* of the moment, not the moment itself.
+
+#### 7.13.2 Solution: Always-On Ring Buffer
+
+The system maintains a **rolling circular buffer** of the last N seconds of raw, full-resolution frames in RAM. When the AI triggers a capture, it does NOT save the current frame. Instead, it **backtracks** into the ring buffer and selects the optimal frame from the recent history.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    RING BUFFER ARCHITECTURE                       │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Camera Stream (15 FPS) → Ring Buffer (deque, maxlen=75)         │
+│                            ← 5 seconds of history →             │
+│                                                                  │
+│  Frame:  [F1][F2][F3]...[F70][F71][F72][F73][F74][F75]           │
+│           ▲ oldest                              ▲ newest         │
+│                                                                  │
+│  AI triggers capture at F75 (detects handshake ending)           │
+│                                                                  │
+│  Backtrack Engine:                                               │
+│    1. Scan buffer[F60..F75] (last 1 second)                      │
+│    2. Run lightweight IQG on each candidate:                     │
+│       - Laplacian sharpness score                                │
+│       - Person detection confidence                              │
+│       - Composition score (rule-of-thirds proximity)             │
+│    3. Select frame with highest composite quality                │
+│    4. Save THAT frame (not F75) to capture buffer                │
+│                                                                  │
+│  Result: Captures the PEAK of the handshake (F68),               │
+│          not the aftermath (F75)                                  │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+#### 7.13.3 Ring Buffer Implementation
+
+```python
+from collections import deque
+import numpy as np
+import cv2
+import time
+
+class FrameRingBuffer:
+    """
+    Always-on circular buffer storing raw frames for retroactive capture.
+    Memory: ~150 MB for 75 frames at 720p (1280×720×3 bytes × 75)
+    """
+
+    def __init__(self, max_seconds: float = 5.0, fps: int = 15):
+        self.max_frames = int(max_seconds * fps)
+        self.buffer = deque(maxlen=self.max_frames)
+        self.timestamps = deque(maxlen=self.max_frames)
+
+    def push(self, frame: np.ndarray):
+        """Called every frame from the capture thread. O(1) amortized."""
+        self.buffer.append(frame)
+        self.timestamps.append(time.monotonic())
+
+    def backtrack(self, lookback_seconds: float = 1.0,
+                  candidates: int = 15) -> list:
+        """
+        Returns the last N frames for quality analysis.
+        O(1) — deque supports efficient right-side slicing.
+        """
+        n = min(candidates, len(self.buffer))
+        return list(self.buffer)[-n:]
+
+    def get_best_frame(self, lookback_seconds: float = 1.0) -> np.ndarray:
+        """
+        Scan recent frames, score each for sharpness + composition,
+        return the best one. Total cost: ~8ms for 15 candidates.
+        """
+        candidates = self.backtrack(lookback_seconds)
+        if not candidates:
+            return None
+
+        best_frame = None
+        best_score = -1
+
+        for frame in candidates:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            # Laplacian sharpness (~0.3ms per frame at 720p)
+            sharpness = cv2.Laplacian(gray, cv2.CV_64F).var()
+            # Normalize to 0-1 range (empirical: good photos score 80-300)
+            score = min(sharpness / 300.0, 1.0)
+
+            if score > best_score:
+                best_score = score
+                best_frame = frame
+
+        return best_frame
+
+    @property
+    def memory_usage_mb(self) -> float:
+        """Estimated RAM usage."""
+        if not self.buffer:
+            return 0.0
+        frame_bytes = self.buffer[0].nbytes
+        return (frame_bytes * len(self.buffer)) / (1024 * 1024)
+```
+
+#### 7.13.4 Memory Budget
+
+| Resolution | Bytes/Frame | Buffer Size (5s @ 15 FPS) | RAM Usage |
+|---|---|---|---|
+| 640×480 (VGA) | 921 KB | 75 frames | ~67 MB |
+| 1280×720 (HD) | 2.7 MB | 75 frames | ~203 MB |
+| 1920×1080 (FHD) | 6.2 MB | 75 frames | ~465 MB |
+| **Recommended** | **720p** | **75 frames** | **~200 MB** |
+
+**Optimization:** Store JPEG-compressed frames in the buffer instead of raw NumPy arrays. At quality=85, this reduces 720p from 2.7 MB to ~80 KB per frame, dropping total buffer RAM from 203 MB to ~6 MB. The trade-off is ~1ms encode + ~1ms decode per frame.
+
+#### 7.13.5 Backtrack Trigger Events
+
+The backtrack engine activates whenever the AI Orchestrator fires a capture. The backtrack depth (how far back to scan) varies by event type:
+
+| Trigger | Backtrack Depth | Candidates Scanned | Rationale |
+|---|---|---|---|
+| **Standard capture** | 0.5s (8 frames) | 8 | Small window; the engagement sustain already delays the trigger |
+| **Key moment detected** (handshake, spin) | 1.0s (15 frames) | 15 | Key moments are fast; need deeper lookback |
+| **Dance burst mode** | 2.0s (30 frames) | 30 | Navratri/Garba spins complete in 1-2 seconds |
+| **Cricket shot** | 1.5s (22 frames) | 22 | Bat-swing starts well before contact frame |
+| **Manual shutter** | 0.3s (5 frames) | 5 | Photographer already timed it; minimal correction needed |
+
+#### 7.13.6 Backtrack Quality Scoring (Composite)
+
+Each candidate frame is scored on a weighted composite:
+
+```
+BacktrackScore = (0.50 × Sharpness) + (0.25 × FaceVisibility) + (0.25 × Composition)
+
+Where:
+  Sharpness    = Laplacian variance / 300.0, clamped [0, 1]
+  FaceVisibility = (number of faces with det_score > 0.5) / expected_faces
+  Composition  = Rule-of-thirds proximity score of primary subject centroid
+```
+
+**Total backtrack scoring cost: ~8ms for 15 candidates** (Laplacian only; face detection and composition scoring are optional and only run on the top 3 sharpest candidates to save compute).
+
+---
+
+### 7.14 Real-Time Performance Engineering
+
+#### 7.14.1 Design Philosophy
+
+The REC edge pipeline is a **hard real-time system**. Every millisecond of latency directly translates to missed moments. The architecture must be designed to:
+
+1. **Never block the camera thread.** Frame capture runs in a dedicated thread with zero contention.
+2. **Never process stale frames.** If inference is slower than capture, drop old frames and always process the newest.
+3. **Never wait for I/O.** Disk writes, network uploads, and JSON state dumps happen asynchronously in background threads.
+
+#### 7.14.2 Multi-Process Pipeline Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│              EDGE NODE REAL-TIME PIPELINE (3-Stage)                 │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌─────────────────┐   Shared    ┌──────────────────┐               │
+│  │  STAGE 1:       │   Memory    │  STAGE 2:        │               │
+│  │  CAPTURE THREAD │ ──────────► │  INFERENCE PROC  │               │
+│  │  (I/O-bound)    │  (zero-copy)│  (CPU-bound)     │               │
+│  │                 │             │                  │               │
+│  │  • cv2.read()   │   Frame     │  • YOLOv8n       │               │
+│  │  • Ring buffer  │   +         │  • ByteTrack     │               │
+│  │    push         │   Metadata  │  • Engagement    │               │
+│  │  • Timestamp    │             │  • Key Moment    │               │
+│  └─────────────────┘             │  • Overlay draw  │               │
+│                                  └────────┬─────────┘               │
+│                                           │                         │
+│                                    Queue (maxsize=1)                │
+│                                           │                         │
+│                                  ┌────────▼─────────┐               │
+│                                  │  STAGE 3:        │               │
+│                                  │  I/O WORKERS     │               │
+│                                  │  (Background)    │               │
+│                                  │                  │               │
+│                                  │  • JPEG encode   │               │
+│                                  │  • /tmp write    │               │
+│                                  │  • State JSON    │               │
+│                                  │  • Cloud upload  │               │
+│                                  │  • Buffer save   │               │
+│                                  └──────────────────┘               │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### 7.14.3 Zero-Copy Shared Memory (Frame Passing)
+
+Standard `multiprocessing.Queue` serializes NumPy arrays via `pickle`, which copies the entire frame (~2.7 MB at 720p) per transfer. At 15 FPS, this wastes ~40 MB/s of memory bandwidth and adds ~5ms latency per frame.
+
+**Solution: `multiprocessing.shared_memory`**
+
+```python
+import multiprocessing.shared_memory as shm
+import numpy as np
+
+# Producer (Capture Thread) — writes frame to shared memory
+def create_shared_frame(name: str, shape: tuple, dtype=np.uint8):
+    """Create a shared memory block for a single frame."""
+    nbytes = int(np.prod(shape)) * np.dtype(dtype).itemsize
+    mem = shm.SharedMemory(name=name, create=True, size=nbytes)
+    frame = np.ndarray(shape, dtype=dtype, buffer=mem.buf)
+    return mem, frame
+
+# Consumer (Inference Process) — reads frame without copy
+def attach_shared_frame(name: str, shape: tuple, dtype=np.uint8):
+    """Attach to existing shared memory. Zero-copy read."""
+    mem = shm.SharedMemory(name=name, create=False)
+    frame = np.ndarray(shape, dtype=dtype, buffer=mem.buf)
+    return mem, frame
+```
+
+**Signaling:** A lightweight `multiprocessing.Event` or a 1-element `Queue` carrying only the frame index (not the frame data) signals the inference process that a new frame is ready.
+
+#### 7.14.4 Lock-Free LIFO (Latest-Frame-Wins)
+
+If the inference process is slower than the capture rate, a FIFO queue causes frames to pile up, increasing staleness. A **LIFO (Last-In-First-Out)** strategy ensures the inference process always works on the most recent frame:
+
+```python
+import threading
+
+class LatestFrameBuffer:
+    """
+    Thread-safe single-slot buffer. Always returns the latest frame.
+    Writers never block. Readers always get the newest data.
+    """
+    def __init__(self):
+        self._frame = None
+        self._lock = threading.Lock()
+
+    def write(self, frame):
+        with self._lock:
+            self._frame = frame  # Overwrite — old frame is discarded
+
+    def read(self):
+        with self._lock:
+            return self._frame
+```
+
+This is computationally equivalent to a `maxsize=1` queue but avoids the overhead of `Queue.put(block=False)` exception handling.
+
+#### 7.14.5 Per-Stage Latency Budget (15 FPS = 66ms total)
+
+| Stage | Operation | Budget | Optimization |
+|---|---|---|---|
+| **Capture** | `cv2.read()` + ring buffer push | 5ms | Threaded; never blocks inference |
+| **Resize** | 720p → 640×640 for YOLO input | 1ms | `cv2.resize(INTER_NEAREST)` — fastest interpolation |
+| **YOLO Detection** | YOLOv8n inference (person class) | 25ms | FP16 on GPU; INT8 via TensorRT on Jetson |
+| **ByteTrack** | Multi-object tracking association | 1ms | Pure IoU + Kalman; zero CNN overhead |
+| **Engagement Scoring** | Per-PID score computation | 2ms | NumPy vectorized; no Python loops |
+| **Key Moment GRU** | Temporal action classification | 2ms | ONNX Runtime; 200 KB model |
+| **Pose Estimation** | YOLOv8n-pose (if profile requires) | 12ms | Only enabled for Cricket/Dance profiles |
+| **Overlay Drawing** | Ellipses + labels + state text | 3ms | `cv2.ellipse()` + `cv2.putText()` |
+| **JPEG Encode** | Frame → JPEG for dashboard stream | 3ms | `cv2.imencode('.jpg', quality=70)` |
+| **State JSON** | Orchestrator state → `/tmp/rec_state.json` | 0.5ms | `json.dumps()` + atomic file write |
+| **Ring Buffer Save** | Capture-triggered backtrack + save | 8ms | Async; runs in I/O worker thread |
+| **Total (Standard)** | Without pose estimation | **~41ms** | **24 FPS headroom** |
+| **Total (Pose)** | With pose estimation | **~53ms** | **18 FPS headroom** |
+
+#### 7.14.6 Frame Skipping Strategy
+
+To maintain real-time performance on CPU-only hardware, apply intelligent frame skipping:
+
+| Operation | Skip Pattern | Effective Rate | Rationale |
+|---|---|---|---|
+| **Frame Capture** | Every frame | 15 FPS | Never skip capture; ring buffer needs all frames |
+| **YOLO Detection** | Every frame | 15 FPS | Core pipeline; must run at full rate |
+| **ByteTrack** | Every frame | 15 FPS | Tracker needs continuous input for smooth association |
+| **Engagement Scoring** | Every frame | 15 FPS | Sustain counter depends on frame-by-frame continuity |
+| **Key Moment GRU** | Every 3rd frame | 5 FPS | Temporal model needs 30-frame windows; 5 FPS input is sufficient |
+| **Pose Estimation** | Every 3rd frame | 5 FPS | Expensive; keypoints change slowly relative to pose duration |
+| **Re-ID (OSNet)** | Every 15th frame | 1 FPS | Appearance signatures change slowly |
+| **Overlay Rendering** | Every frame | 15 FPS | Visual continuity for dashboard |
+
+#### 7.14.7 Async I/O Queue (Non-Blocking Writes)
+
+All disk and network I/O is offloaded to a dedicated worker thread via a `queue.Queue`:
+
+```python
+import queue
+import threading
+
+class AsyncIOWorker:
+    """
+    Non-blocking I/O worker. Capture and inference never wait for disk.
+    """
+    def __init__(self):
+        self.queue = queue.Queue(maxsize=50)
+        self.thread = threading.Thread(target=self._worker, daemon=True)
+        self.thread.start()
+
+    def _worker(self):
+        while True:
+            task = self.queue.get()
+            try:
+                task()
+            except Exception as e:
+                logging.error(f"I/O worker error: {e}")
+            self.queue.task_done()
+
+    def submit(self, task_fn):
+        """Submit a callable to be executed asynchronously."""
+        try:
+            self.queue.put_nowait(task_fn)
+        except queue.Full:
+            pass  # Drop oldest writes if queue is full (non-critical)
+```
+
+**Usage:** Frame saves, JSON state writes, JPEG encoding for the dashboard, and cloud uploads are all submitted to this worker, ensuring the inference loop never blocks on I/O.
+
+#### 7.14.8 Algorithmic Optimizations (Micro-Level)
+
+| Operation | Naive Cost | Optimized Cost | Technique |
+|---|---|---|---|
+| **Gini coefficient** | O(n log n) sort | O(n) | Pre-maintain sorted insertion list; incremental update on capture |
+| **Cooldown lookup** | O(n) linear scan | O(1) | `dict` keyed by PID with expiry timestamps |
+| **Priority queue** | O(n) linear scan | O(log n) | `heapq` with (negative_priority, PID) tuples |
+| **IoU computation** | O(n²) pairwise | O(n log n) | Spatial indexing via interval trees for bbox overlap |
+| **Frame resize** | `INTER_LINEAR` | `INTER_NEAREST` | 2-4x faster; negligible quality difference for detection input |
+| **Color hist** | `cv2.calcHist` full frame | ROI-only crop | Process only the person bbox region, not the entire frame |
+| **JSON state dump** | `json.dumps` every frame | Rate-limited to 2 Hz | State changes slowly; 2 Hz is sufficient for dashboard |
+| **JPEG encode** | Quality=95 | Quality=70 | 2-3x faster encoding; dashboard stream doesn't need archival quality |
+
+---
+
+
 
 ### 8.1 Core Entities
 
@@ -1895,7 +2688,9 @@ def run_full_clustering(event_id: str):
 | **Right to deletion** | Users can request complete removal of their selfie, embedding, and matched photos |
 | **Time-bound retention** | All biometric data auto-deleted after configurable period (default: 30 days post-event) |
 
-### 12.2 Data Protection Measures
+### 12.2 Data Protection & Edge Node Security
+
+#### 12.2.1 Transport & Storage Security
 
 | Layer | Measure |
 |---|---|
@@ -1906,6 +2701,82 @@ def run_full_clustering(event_id: str):
 | **API Auth** | JWT with short-lived tokens (15min) + refresh tokens |
 | **Selfie Upload** | Processed in memory, embedding extracted, raw selfie optionally deleted immediately |
 | **Audit Logging** | All data access and deletion events logged immutably |
+
+#### 12.2.2 Edge Node Authentication — Server-Side Only (MANDATORY)
+
+> **CRITICAL DESIGN CONSTRAINT:** All authentication and authorization decisions are made EXCLUSIVELY on the cloud backend server. The edge node is treated as an UNTRUSTED client. It never validates tokens locally, never stores signing secrets, and never makes access decisions independently.
+
+**Authentication Flow (Strict Server-Side):**
+
+```
+┌──────────────────┐         ┌──────────────────────┐        ┌──────────────────┐
+│   EDGE NODE      │         │   CLOUD BACKEND      │        │   PostgreSQL     │
+│   (Untrusted)    │         │   (Trusted Authority)│        │   Auth DB        │
+│                  │         │                      │        │                  │
+│  1. Photographer │         │                      │        │                  │
+│     enters creds │         │                      │        │                  │
+│     in browser   │         │                      │        │                  │
+│                  │  HTTPS  │                      │        │                  │
+│  2. Edge server  │────────►│  3. Server validates  │───────►│  4. bcrypt hash  │
+│     forwards     │  POST   │     against DB        │ SELECT │     comparison   │
+│     credentials  │ /login  │                      │        │                  │
+│     (plain relay)│         │                      │        │                  │
+│                  │◄────────│  5. Returns signed    │        │                  │
+│  6. Edge stores  │  JWT    │     JWT (RS256)      │        │                  │
+│     token in     │  token  │     15min expiry     │        │                  │
+│     HTTP-only    │         │                      │        │                  │
+│     cookie ONLY  │         │                      │        │                  │
+│                  │         │                      │        │                  │
+│  7. ALL subsequent│        │                      │        │                  │
+│     API calls    │────────►│  8. Server validates  │        │                  │
+│     include JWT  │ Bearer  │     JWT signature,   │        │                  │
+│     in header    │  token  │     expiry, claims   │        │                  │
+│                  │         │                      │        │                  │
+│  9. If 401 →     │◄────────│  10. Returns 401     │        │                  │
+│     Kill orch,   │  401    │      if invalid      │        │                  │
+│     redirect to  │         │                      │        │                  │
+│     /login       │         │                      │        │                  │
+└──────────────────┘         └──────────────────────┘        └──────────────────┘
+```
+
+#### 12.2.3 What the Edge Node MUST NOT Do
+
+The following operations are STRICTLY PROHIBITED on the edge node. Violating any of these constitutes a critical security vulnerability:
+
+| Prohibited Action | Reason |
+|---|---|
+| ❌ Store JWT signing secret (private key) on disk or in memory | An attacker with filesystem access could forge unlimited valid tokens |
+| ❌ Validate JWT signatures locally | Local validation can be bypassed by patching the validation function in the Python source |
+| ❌ Store credentials in plaintext, `.env`, or config files | Any local credential cache can be extracted by a malicious actor |
+| ❌ Use hardcoded "backdoor" credentials in production builds | Sandbox bypass (`photographer1/password`) is disabled via `BUILD_MODE=production` environment variable |
+| ❌ Allow the Orchestrator to start without a valid server-issued token | The Orchestrator subprocess receives the token as an environment variable; the cloud API validates it on every `/upload` call |
+| ❌ Cache authentication state locally between app restarts | Every app launch requires a fresh login. No "remember me" on edge devices |
+| ❌ Use symmetric JWT signing (HS256) | HS256 requires the secret on both sides. RS256/ES256 ensures only the server can sign |
+
+#### 12.2.4 JWT Token Architecture
+
+| Property | Value | Rationale |
+|---|---|---|
+| **Algorithm** | RS256 (RSA + SHA-256) | Asymmetric: only the cloud server holds the private key. The edge node cannot forge tokens. |
+| **Access Token TTL** | 15 minutes | Short-lived to limit exposure window if token is intercepted |
+| **Refresh Token TTL** | 24 hours | Allows session persistence during a full event day without re-login |
+| **Refresh Token Rotation** | Enabled | Each refresh request issues a new refresh token and invalidates the old one. Detects token theft. |
+| **Claims** | `sub` (photographer ID), `role` ("photographer"), `event_id`, `exp`, `jti` (unique token ID) | Minimal claims; no PII in token payload |
+| **Revocation** | Server-side blacklist in Redis (`jti` → TTL matching token expiry) | Enables immediate revocation if device is compromised |
+| **Audience** | `rec-edge-node` | Prevents tokens issued for other services from being used on the edge API |
+
+#### 12.2.5 Edge Node Anti-Tampering Measures
+
+Since the edge node runs on photographer-owned hardware (laptops), additional hardening is required:
+
+| Threat | Mitigation |
+|---|---|
+| **Source code modification** (attacker edits `server.py` to skip auth) | PyInstaller binary compilation with `--key` flag encrypts bytecode. Source files are not shipped in production builds. |
+| **Memory dumping** (attacker reads JWT from process memory) | Short-lived tokens (15min) limit the value of stolen tokens. Refresh token rotation detects reuse. |
+| **Network interception** (MITM captures JWT in transit) | All edge ↔ cloud communication uses TLS 1.3. Certificate pinning enforced in production. |
+| **Token replay** (attacker reuses captured JWT on different device) | `jti` claim + server-side Redis blacklist. Hardware fingerprint (`machine-id`) embedded in token claims for device binding. |
+| **Offline operation** (attacker disconnects from internet to avoid auth) | The Orchestrator periodically (every 5 minutes) calls a cloud `/heartbeat` endpoint. If it receives 3 consecutive failures AND the token has expired, the Orchestrator self-terminates. Photos captured during brief offline periods are stored locally and synced when connectivity resumes. |
+| **Binary reverse engineering** | UPX compression + PyInstaller `--key` AES encryption. While not unbreakable, it raises the difficulty significantly above the typical photographer threat model. |
 
 ### 12.3 Regulatory Compliance Checklist
 

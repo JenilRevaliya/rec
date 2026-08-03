@@ -7,176 +7,732 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
-        body { background-color: #fdfbf7; font-family: 'Courier New', Courier, monospace; }
-        .neo-box { border: 3px solid #000; box-shadow: 4px 4px 0px #000; background-color: white; }
-        .neo-button { border: 3px solid #000; box-shadow: 4px 4px 0px #000; font-weight: bold; cursor: pointer; transition: all 0.1s; }
-        .neo-button:active { transform: translate(4px, 4px); box-shadow: 0px 0px 0px #000; }
-        .neo-button-green { background-color: #7bfa7b; }
-        .neo-button-red { background-color: #ff6b6b; }
-        .neo-button-blue { background-color: #4dc5fa; }
-        .neo-button-yellow { background-color: #fca311; }
+        /* UI-UX Pro Max: Authentic Neomorphism (Soft UI) */
+        :root {
+            --bg: #E0E5EC;
+            --text-dark: #2D3748;
+            --text-muted: #718096;
+            --shadow-light: #ffffff;
+            --shadow-dark: #a3b1c6;
+        }
+        
+        body { 
+            background-color: var(--bg); 
+            color: var(--text-dark);
+            font-family: 'Inter', -apple-system, sans-serif; 
+            margin: 0;
+            padding: 1.5rem;
+        }
+
+        .neo-surface {
+            background-color: var(--bg);
+            border-radius: 30px; 
+            box-shadow: 9px 9px 16px var(--shadow-dark), 
+                       -9px -9px 16px var(--shadow-light);
+            transition: all 0.3s ease;
+        }
+
+        .neo-inset {
+            background-color: var(--bg);
+            border-radius: 9999px;
+            box-shadow: inset 6px 6px 10px var(--shadow-dark), 
+                       inset -6px -6px 10px var(--shadow-light);
+            border: none;
+            color: var(--text-dark);
+            outline: none;
+        }
+        
+        .neo-inset-box {
+            background-color: var(--bg);
+            border-radius: 30px;
+            box-shadow: inset 6px 6px 10px var(--shadow-dark), 
+                       inset -6px -6px 10px var(--shadow-light);
+            border: none;
+        }
+
+        .neo-button {
+            background-color: var(--bg);
+            border-radius: 9999px; 
+            box-shadow: 7px 7px 14px var(--shadow-dark), 
+                       -7px -7px 14px var(--shadow-light);
+            color: var(--text-dark);
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .neo-button:hover {
+            box-shadow: 4px 4px 10px var(--shadow-dark), 
+                       -4px -4px 10px var(--shadow-light);
+            transform: scale(0.98);
+        }
+        .neo-button:active {
+            box-shadow: inset 5px 5px 10px var(--shadow-dark), 
+                       inset -5px -5px 10px var(--shadow-light);
+            transform: scale(0.95);
+        }
+        
+        /* Colored Indicators (Subtle Glowing Dots) */
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-green { background-color: #48bb78; box-shadow: 0 0 8px #48bb78; }
+        .status-red { background-color: #f56565; box-shadow: 0 0 8px #f56565; }
+        .status-yellow { background-color: #ecc94b; box-shadow: 0 0 8px #ecc94b; }
+
+        @keyframes fadeIn {
+            0% { opacity: 0; transform: scale(0.95); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        .animate-enter { animation: fadeIn 0.4s ease forwards; }
     </style>
 </head>
-<body class="w-full min-h-screen p-6">
+<body class="w-full min-h-screen flex flex-col gap-8">
 
-    <header class="neo-box p-4 flex justify-between items-center mb-6">
-        <div>
-            <h1 class="text-2xl font-black uppercase tracking-tighter">REC Edge Dashboard</h1>
-            <p class="text-xs font-bold uppercase text-gray-500">Photographer: {{ user }}</p>
-        </div>
+    <header class="neo-surface p-6 flex flex-col md:flex-row justify-between items-center gap-4 animate-enter">
         <div class="flex items-center gap-4">
-            <div class="flex items-center gap-2 neo-box px-3 py-1 text-sm font-bold bg-gray-100">
-                <span>Orchestrator:</span>
-                <span id="orch-status" class="uppercase {{ 'text-green-600' if status == 'Running' else 'text-red-600' }}">{{ status }}</span>
+            <div class="w-12 h-12 rounded-full neo-surface flex items-center justify-center">
+                <i data-lucide="camera" class="w-5 h-5 text-gray-600"></i>
             </div>
-            <button id="toggle-orch" class="neo-button px-4 py-2 text-sm uppercase {{ 'neo-button-red' if status == 'Running' else 'neo-button-green' }}">
+            <div>
+                <h1 class="text-xl font-extrabold tracking-tight">REC Edge Dashboard</h1>
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-widest">User: {{ user }}</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-6">
+            <div class="flex items-center gap-3 text-sm font-bold">
+                <span class="text-gray-500 uppercase text-xs tracking-wider">Engine State</span>
+                <div class="neo-inset px-4 py-2 flex items-center">
+                    <span id="orch-status-dot" class="status-dot {{ 'status-green' if status == 'Running' else 'status-red' }}"></span>
+                    <span id="orch-status" class="uppercase tracking-wide">{{ status }}</span>
+                </div>
+            </div>
+            <button id="toggle-orch" class="neo-button px-6 py-3 text-sm uppercase">
                 {{ "Stop Capture" if status == 'Running' else "Start Capture" }}
             </button>
         </div>
     </header>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         <!-- Left Column: Camera Feed & Settings -->
-        <div class="lg:col-span-1 flex flex-col gap-6">
+        <div class="lg:col-span-1 flex flex-col gap-8">
             
-            <div class="neo-box p-4 bg-black flex flex-col items-center justify-center relative min-h-[300px]">
-                <div class="absolute top-4 left-4 bg-red-600 text-white text-xs font-bold px-2 py-1 uppercase flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full bg-white animate-pulse block"></span> Live
+            <div class="neo-surface p-2 flex flex-col items-center justify-center relative min-h-[480px] overflow-hidden animate-enter" style="animation-delay: 0.1s;">
+                <div class="absolute top-6 left-6 neo-surface px-4 py-2 rounded-full text-xs font-bold uppercase flex items-center gap-2 z-10 text-gray-600">
+                    <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse block shadow-[0_0_8px_#f56565]"></span> Live AI
                 </div>
-                <i data-lucide="camera" class="text-white w-16 h-16 opacity-50 mb-2"></i>
-                <p class="text-gray-400 text-sm font-bold uppercase">Mount camera on tripod to begin</p>
+                
+                <div class="w-full h-full neo-inset-box flex items-center justify-center relative rounded-[22px] overflow-hidden min-h-[380px] bg-black">
+                    <img id="live-feed" src="" class="w-full h-full object-contain pointer-events-none select-none {{ '' if status == 'Running' else 'hidden' }}" />
+                    <canvas id="ai-overlay" class="absolute inset-0 w-full h-full pointer-events-none z-10 {{ '' if status == 'Running' else 'hidden' }}"></canvas>
+                    <div id="shutter-flash" class="absolute inset-0 bg-white opacity-0 pointer-events-none z-20 transition-opacity duration-150"></div>
+                    <div id="live-placeholder" class="flex flex-col items-center justify-center text-gray-400 {{ 'hidden' if status == 'Running' else '' }}">
+                        <i data-lucide="video" class="w-12 h-12 mb-4 opacity-50"></i>
+                        <p class="text-xs font-bold uppercase tracking-widest text-center px-4">System Idle<br>Awaiting Orchestrator</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="telemetry-bar" class="neo-surface p-4 text-xs font-bold uppercase flex justify-between {{ '' if status == 'Running' else 'hidden' }} rounded-full px-8 tracking-widest text-gray-500">
+                <span id="tel-idle">Idle: 0.0s</span>
+                <span id="tel-gini">Gini: 0.00</span>
+                <span id="tel-mode" class="text-gray-700">16:9 • AUTO-FIT</span>
             </div>
 
-            <div class="neo-box p-4">
-                <h2 class="font-black uppercase mb-4 text-lg border-b-2 border-black pb-2">Sync Controls</h2>
-                
-                <div class="flex items-center justify-between mb-2">
-                    <span class="font-bold uppercase text-sm">Cloud Auto-Sync</span>
-                    <button id="toggle-sync" class="neo-button px-4 py-1 text-sm uppercase {{ 'neo-button-green' if sync_enabled else 'neo-button-yellow' }}">
-                        {{ "ON" if sync_enabled else "OFF" }}
+            <div class="neo-surface p-6 flex flex-col gap-6 animate-enter" style="animation-delay: 0.2s;">
+                <div class="flex flex-col gap-3">
+                    <label class="text-xs font-bold text-gray-500 uppercase tracking-widest px-2">Hardware & Composition Engine</label>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <select id="camera-select" class="neo-inset w-full py-3 px-3 font-bold text-xs" title="Camera Source">
+                            <option value="MOCK_CAM_01">Loading cameras...</option>
+                        </select>
+                        <select id="profile-select" class="neo-inset w-full py-3 px-3 font-bold text-xs" title="Event Profile">
+                            <option value="DEFAULT">Default Profile</option>
+                            <option value="CRICKET">Cricket</option>
+                            <option value="DANCE">Dance/Garba</option>
+                            <option value="SCHOOL">School</option>
+                            <option value="WEDDING">Wedding</option>
+                        </select>
+                        <select id="aspect-select" class="neo-inset w-full py-3 px-3 font-bold text-xs" title="Target Framing Aspect Ratio">
+                            <option value="16:9" selected>16:9 Landscape</option>
+                            <option value="9:16">9:16 Portrait</option>
+                            <option value="4:3">4:3 Landscape</option>
+                            <option value="3:4">3:4 Portrait</option>
+                            <option value="1:1">1:1 Square</option>
+                            <option value="4:5">4:5 Social</option>
+                            <option value="FULL">Full Sensor</option>
+                        </select>
+                        <select id="scale-select" class="neo-inset w-full py-3 px-3 font-bold text-xs" title="Subject Framing Scale">
+                            <option value="AUTO" selected>Auto-Fit (Adaptive)</option>
+                            <option value="TIGHT">Tight (1.15x)</option>
+                            <option value="MEDIUM">Medium (1.38x)</option>
+                            <option value="WIDE">Wide (1.75x)</option>
+                            <option value="FULL">Full Frame</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Smile to Capture Feature Toggle -->
+                <div class="flex items-center justify-between p-3 neo-inset rounded-[16px]">
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-xl select-none">😄</span>
+                        <div class="flex flex-col">
+                            <span class="font-extrabold text-xs uppercase tracking-wide text-gray-700">Smile to Capture</span>
+                            <span class="text-[10px] font-semibold text-gray-400">Auto-triggers shutter when subject smiles</span>
+                        </div>
+                    </div>
+                    <button id="toggle-smile" class="neo-button px-5 py-2 text-xs font-extrabold uppercase flex items-center">
+                        <span id="smile-dot" class="status-dot status-green"></span>
+                        <span id="smile-text">ON</span>
                     </button>
                 </div>
-                <p class="text-xs text-gray-500 font-bold leading-tight">
-                    When ON: Photos upload immediately for AI processing. <br>
-                    When OFF: Photos buffer on local SSD with no data loss.
+
+                <button id="manual-btn" class="neo-button w-full py-4 text-sm uppercase flex items-center justify-center font-extrabold">
+                    <i data-lucide="aperture" class="w-4 h-4 mr-2"></i> Manual Shutter
+                </button>
+            </div>
+
+            <div class="neo-surface p-6 animate-enter" style="animation-delay: 0.3s;">
+                <div class="flex items-center justify-between mb-4">
+                    <span class="font-extrabold uppercase text-sm tracking-wide text-gray-700">Cloud Auto-Sync</span>
+                    <button id="toggle-sync" class="neo-button px-6 py-2 text-xs uppercase">
+                        <span id="sync-dot" class="status-dot {{ 'status-green' if sync_enabled else 'status-yellow' }}"></span>
+                        <span id="sync-text">{{ "ON" if sync_enabled else "OFF" }}</span>
+                    </button>
+                </div>
+                <p class="text-xs text-gray-500 font-medium leading-relaxed px-1">
+                    When ON, captured key moments sync to the cloud node asynchronously.<br>
+                    When OFF, files are safely buffered on the local SSD.
                 </p>
             </div>
 
         </div>
 
         <!-- Right Column: Live Capture Grid -->
-        <div class="lg:col-span-2 neo-box p-4 flex flex-col">
-            <h2 class="font-black uppercase mb-4 text-lg border-b-2 border-black pb-2">Live Capture Buffer</h2>
-            
-            <!-- We will simulate real-time captured images arriving -->
-            <div class="grid grid-cols-2 md:grid-cols-3 gap-4" id="capture-grid">
-                
-                <div class="neo-box p-2 bg-gray-100 flex flex-col items-center justify-center text-center h-48 border-dashed">
-                    <p class="text-sm font-bold uppercase text-gray-500">Waiting for Auto-Capture...</p>
+        <div class="lg:col-span-2 neo-surface p-8 flex flex-col animate-enter" style="animation-delay: 0.2s;">
+            <div class="flex items-center justify-between mb-8 px-2">
+                <div>
+                    <h2 class="font-extrabold uppercase text-lg tracking-wider text-gray-700">Capture Buffer</h2>
+                    <p class="text-xs font-bold text-gray-500 uppercase tracking-widest">AI Framed & Cropped Captures</p>
                 </div>
-                
+                <button onclick="refreshBuffer()" class="neo-button p-3 rounded-full flex items-center justify-center">
+                    <i data-lucide="refresh-cw" class="w-4 h-4 text-gray-600"></i>
+                </button>
             </div>
             
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-6" id="capture-grid">
+                <!-- Dynamically populated -->
+                <div class="text-xs text-gray-400 font-bold uppercase tracking-widest col-span-full text-center py-20 neo-inset-box flex flex-col items-center justify-center">
+                    <i data-lucide="hard-drive" class="w-8 h-8 mb-4 opacity-30"></i>
+                    Buffer Empty
+                </div>
+            </div>
         </div>
+
     </div>
 
     <script>
         lucide.createIcons();
 
-        // Start/Stop Orchestrator
+        // Elements
         const toggleOrchBtn = document.getElementById('toggle-orch');
         const statusText = document.getElementById('orch-status');
+        const statusDot = document.getElementById('orch-status-dot');
+        const camSelect = document.getElementById('camera-select');
+        const profileSelect = document.getElementById('profile-select');
+        const aspectSelect = document.getElementById('aspect-select');
+        const scaleSelect = document.getElementById('scale-select');
+        const liveFeed = document.getElementById('live-feed');
+        const aiCanvas = document.getElementById('ai-overlay');
+        const shutterFlash = document.getElementById('shutter-flash');
+        const livePlaceholder = document.getElementById('live-placeholder');
+        const telemetryBar = document.getElementById('telemetry-bar');
+        const toggleSyncBtn = document.getElementById('toggle-sync');
+        const syncDot = document.getElementById('sync-dot');
+        const syncText = document.getElementById('sync-text');
+        const toggleSmileBtn = document.getElementById('toggle-smile');
+        const smileDot = document.getElementById('smile-dot');
+        const smileText = document.getElementById('smile-text');
+        const manualBtn = document.getElementById('manual-btn');
 
+        let stateInterval = null;
+        let streamRetryTimeout = null;
+        let latestAiState = null;
+        let renderLoopActive = false;
+        let knownPhotosStr = '';
+        let smileCaptureEnabled = true;
+
+        // Load Cameras dynamically
+        async function loadCameras() {
+            try {
+                const res = await fetch('/api/cameras');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data.cameras) && data.cameras.length > 0) {
+                        camSelect.innerHTML = '';
+                        let hasPreferredSelection = false;
+                        
+                        // Check if a FaceTime camera is available
+                        const preferredCam = data.cameras.find(c => {
+                            const lbl = (typeof c === 'object' ? (c.label || c.name || '') : String(c)).toLowerCase();
+                            return lbl.includes('facetime') || lbl.includes('built-in');
+                        });
+
+                        data.cameras.forEach(cam => {
+                            const opt = document.createElement('option');
+                            const camId = typeof cam === 'object' && cam !== null ? cam.id : cam;
+                            const camLabel = typeof cam === 'object' && cam !== null ? (cam.label || cam.name || cam.id) : cam;
+                            
+                            opt.value = camId;
+                            opt.innerText = camLabel;
+
+                            if (preferredCam && (typeof preferredCam === 'object' ? preferredCam.id : preferredCam) === camId) {
+                                opt.selected = true;
+                                hasPreferredSelection = true;
+                            }
+                            camSelect.appendChild(opt);
+                        });
+
+                        if (!hasPreferredSelection && camSelect.options.length > 0) {
+                            camSelect.selectedIndex = 0;
+                        }
+                    }
+                }
+            } catch(e) {
+                console.error("Failed to load cameras:", e);
+            }
+        }
+        loadCameras();
+
+        // Profile Selector
+        profileSelect.addEventListener('change', async () => {
+            const profile = profileSelect.value;
+            try {
+                await fetch('/api/set-profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ profile })
+                });
+            } catch(e) {}
+        });
+
+        // Aspect Ratio Selector
+        aspectSelect.addEventListener('change', async () => {
+            const aspect_ratio = aspectSelect.value;
+            try {
+                await fetch('/api/set-aspect-ratio', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ aspect_ratio })
+                });
+            } catch(e) {}
+        });
+
+        // Framing Scale Selector
+        scaleSelect.addEventListener('change', async () => {
+            const framing_scale = scaleSelect.value;
+            try {
+                await fetch('/api/set-framing-scale', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ framing_scale })
+                });
+            } catch(e) {}
+        });
+
+        // Start / Stop Orchestrator Toggle
         toggleOrchBtn.addEventListener('click', async () => {
-            const isRunning = statusText.innerText.trim() === 'RUNNING';
+            const isRunning = statusText.innerText.trim().toUpperCase() === 'RUNNING';
             const endpoint = isRunning ? '/api/stop-orchestrator' : '/api/start-orchestrator';
             
-            const res = await fetch(endpoint, { method: 'POST' });
-            if (res.ok) {
-                if (isRunning) {
-                    statusText.innerText = 'STOPPED';
-                    statusText.className = 'uppercase text-red-600';
-                    toggleOrchBtn.innerText = 'START CAPTURE';
-                    toggleOrchBtn.className = 'neo-button px-4 py-2 text-sm uppercase neo-button-green';
-                } else {
-                    statusText.innerText = 'RUNNING';
-                    statusText.className = 'uppercase text-green-600';
-                    toggleOrchBtn.innerText = 'STOP CAPTURE';
-                    toggleOrchBtn.className = 'neo-button px-4 py-2 text-sm uppercase neo-button-red';
+            const reqBody = isRunning ? {} : { 
+                camera_id: camSelect.value,
+                profile_id: profileSelect.value,
+                aspect_ratio: aspectSelect.value,
+                framing_scale: scaleSelect.value
+            };
+            
+            try {
+                const res = await fetch(endpoint, { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(reqBody)
+                });
+                
+                if (res.ok) {
+                    if (isRunning) {
+                        statusText.innerText = 'STOPPED';
+                        statusDot.className = 'status-dot status-red';
+                        toggleOrchBtn.innerText = 'START CAPTURE';
+                        
+                        stopStream();
+                        liveFeed.classList.add('hidden');
+                        aiCanvas.classList.add('hidden');
+                        livePlaceholder.classList.remove('hidden');
+                        telemetryBar.classList.add('hidden');
+                    } else {
+                        statusText.innerText = 'RUNNING';
+                        statusDot.className = 'status-dot status-green';
+                        toggleOrchBtn.innerText = 'STOP CAPTURE';
+                        
+                        livePlaceholder.classList.add('hidden');
+                        liveFeed.classList.remove('hidden');
+                        aiCanvas.classList.remove('hidden');
+                        telemetryBar.classList.remove('hidden');
+                        startStream();
+                    }
                 }
+            } catch(e) {
+                console.error("Error toggling orchestrator:", e);
             }
         });
 
-        // Toggle Sync
-        const toggleSyncBtn = document.getElementById('toggle-sync');
-        let syncOn = {{ 'true' if sync_enabled else 'false' }};
-        
+        // Cloud Sync Toggle
         toggleSyncBtn.addEventListener('click', async () => {
-            syncOn = !syncOn;
-            const res = await fetch('/api/toggle-sync', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ enabled: syncOn })
-            });
-            if (res.ok) {
-                if (syncOn) {
-                    toggleSyncBtn.innerText = 'ON';
-                    toggleSyncBtn.className = 'neo-button px-4 py-1 text-sm uppercase neo-button-green';
-                } else {
-                    toggleSyncBtn.innerText = 'OFF';
-                    toggleSyncBtn.className = 'neo-button px-4 py-1 text-sm uppercase neo-button-yellow';
+            try {
+                const res = await fetch('/api/toggle-sync', { method: 'POST' });
+                if (res.ok) {
+                    const data = await res.json();
+                    const isOn = data.sync_enabled;
+                    syncDot.className = `status-dot ${isOn ? 'status-green' : 'status-yellow'}`;
+                    syncText.innerText = isOn ? 'ON' : 'OFF';
                 }
-            }
+            } catch(e) {}
         });
 
-        // Local Buffer Hydration (Real-time stream)
-        async function fetchBuffer() {
+        // Smile-to-Capture Toggle
+        toggleSmileBtn.addEventListener('click', async () => {
+            try {
+                const nextState = !smileCaptureEnabled;
+                const res = await fetch('/api/toggle-smile-capture', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: nextState })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    smileCaptureEnabled = data.smile_capture_enabled;
+                    smileDot.className = `status-dot ${smileCaptureEnabled ? 'status-green' : 'status-yellow'}`;
+                    smileText.innerText = smileCaptureEnabled ? 'ON' : 'OFF';
+                }
+            } catch(e) {}
+        });
+
+        // Load Smile Capture State on Boot
+        async function loadSmileCaptureState() {
+            try {
+                const res = await fetch('/api/smile-capture');
+                if (res.ok) {
+                    const data = await res.json();
+                    smileCaptureEnabled = data.enabled !== false;
+                    smileDot.className = `status-dot ${smileCaptureEnabled ? 'status-green' : 'status-yellow'}`;
+                    smileText.innerText = smileCaptureEnabled ? 'ON' : 'OFF';
+                }
+            } catch(e) {}
+        }
+        loadSmileCaptureState();
+
+        // Manual Capture with Flash Feedback & Instant Refresh
+        manualBtn.addEventListener('click', async () => {
+            if (shutterFlash) {
+                shutterFlash.style.opacity = '0.85';
+                setTimeout(() => { shutterFlash.style.opacity = '0'; }, 120);
+            }
+            manualBtn.style.transform = 'scale(0.94)';
+            setTimeout(() => { manualBtn.style.transform = ''; }, 150);
+
+            try {
+                const res = await fetch('/api/manual-capture', { method: 'POST' });
+                if (res.ok) {
+                    setTimeout(refreshBuffer, 250);
+                }
+            } catch(e) {}
+        });
+
+        // Delete Photo
+        async function deletePhoto(filename) {
+            try {
+                const res = await fetch(`/api/photos/${filename}`, { method: 'DELETE' });
+                if (res.ok) {
+                    refreshBuffer();
+                }
+            } catch(e) {}
+        }
+
+        // Vector Canvas AI Overlay Renderer (High Performance 60 FPS)
+        function drawAiOverlay() {
+            if (!renderLoopActive) return;
+
+            const ctx = aiCanvas.getContext('2d');
+            const rect = liveFeed.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+
+            if (rect.width > 0 && rect.height > 0) {
+                if (aiCanvas.width !== Math.round(rect.width * dpr) || aiCanvas.height !== Math.round(rect.height * dpr)) {
+                    aiCanvas.width = Math.round(rect.width * dpr);
+                    aiCanvas.height = Math.round(rect.height * dpr);
+                }
+
+                ctx.save();
+                ctx.scale(dpr, dpr);
+                ctx.clearRect(0, 0, rect.width, rect.height);
+
+                if (latestAiState && Array.isArray(latestAiState.pids) && latestAiState.pids.length > 0) {
+                    const frameW = latestAiState.frame_width || 640;
+                    const frameH = latestAiState.frame_height || 480;
+                    
+                    // Precise letterbox coordinate mapping
+                    const scale = Math.min(rect.width / frameW, rect.height / frameH);
+                    const drawW = frameW * scale;
+                    const drawH = frameH * scale;
+                    const offsetX = (rect.width - drawW) / 2;
+                    const offsetY = (rect.height - drawH) / 2;
+
+                    latestAiState.pids.forEach(p => {
+                        const [x1, y1, x2, y2] = p.bbox;
+                        const bx = offsetX + x1 * scale;
+                        const by = offsetY + y1 * scale;
+                        const bw = (x2 - x1) * scale;
+                        const bh = (y2 - y1) * scale;
+
+                        // Color mapping based on state & Smile Detection
+                        let strokeColor = '#10B981'; // Emerald Green (Ready)
+                        let fillColor = 'rgba(16, 185, 129, 0.12)';
+                        
+                        if (p.is_smiling) {
+                            strokeColor = '#10B981'; // Vibrant Emerald/Gold for Smile
+                            fillColor = 'rgba(16, 185, 129, 0.20)';
+                        } else if (p.status === 'ANALYZING') {
+                            strokeColor = '#06B6D4'; // Cyan (Patience Seeking / Tracking)
+                            fillColor = 'rgba(6, 182, 212, 0.12)';
+                        } else if (p.status === 'COOLDOWN') {
+                            strokeColor = '#EF4444'; // Red (Cooldown)
+                            fillColor = 'rgba(239, 68, 68, 0.14)';
+                        } else if (p.status === 'IGNORING') {
+                            strokeColor = '#F59E0B'; // Amber
+                            fillColor = 'rgba(245, 158, 11, 0.10)';
+                        }
+
+                        // Resizable Framing Box (Target Area to be Captured)
+                        ctx.fillStyle = fillColor;
+                        ctx.fillRect(bx, by, bw, bh);
+
+                        // Rule of Thirds Guide Lines inside the Resizable Framing Box
+                        if (p.status === 'READY' || p.status === 'ANALYZING' || p.is_smiling) {
+                            ctx.strokeStyle = 'rgba(255, 255, 255, 0.20)';
+                            ctx.lineWidth = 1;
+                            ctx.setLineDash([4, 4]);
+                            // 1/3 horizontal
+                            ctx.beginPath();
+                            ctx.moveTo(bx, by + bh / 3); ctx.lineTo(bx + bw, by + bh / 3);
+                            ctx.moveTo(bx, by + (bh * 2) / 3); ctx.lineTo(bx + bw, by + (bh * 2) / 3);
+                            // 1/3 vertical
+                            ctx.moveTo(bx + bw / 3, by); ctx.lineTo(bx + bw / 3, by + bh);
+                            ctx.moveTo(bx + (bw * 2) / 3, by); ctx.lineTo(bx + (bw * 2) / 3, by + bh);
+                            ctx.stroke();
+                            ctx.setLineDash([]);
+                        }
+
+                        // Glowing corner brackets
+                        ctx.strokeStyle = strokeColor;
+                        ctx.lineWidth = p.is_smiling ? 3.5 : 2.5;
+                        ctx.shadowColor = strokeColor;
+                        ctx.shadowBlur = p.is_smiling ? 12 : 6;
+
+                        const cl = Math.min(20, bw / 3, bh / 3);
+                        // Top-Left
+                        ctx.beginPath();
+                        ctx.moveTo(bx, by + cl); ctx.lineTo(bx, by); ctx.lineTo(bx + cl, by);
+                        ctx.stroke();
+                        // Top-Right
+                        ctx.beginPath();
+                        ctx.moveTo(bx + bw - cl, by); ctx.lineTo(bx + bw, by); ctx.lineTo(bx + bw, by + cl);
+                        ctx.stroke();
+                        // Bottom-Left
+                        ctx.beginPath();
+                        ctx.moveTo(bx, by + bh - cl); ctx.lineTo(bx, by + bh); ctx.lineTo(bx + cl, by + bh);
+                        ctx.stroke();
+                        // Bottom-Right
+                        ctx.beginPath();
+                        ctx.moveTo(bx + bw - cl, by + bh); ctx.lineTo(bx + bw, by + bh); ctx.lineTo(bx + bw, by + bh - cl);
+                        ctx.stroke();
+
+                        ctx.shadowBlur = 0;
+
+                        // Modern HUD Badge Pill with PID + Status + Photo count (max 3) + Framing Scale
+                        const photoCountStr = `${p.photo_count || 0}/3`;
+                        const arStr = p.aspect_ratio || '16:9';
+                        const scaleStr = p.framing_scale || 'AUTO';
+                        const smilePrefix = p.is_smiling ? '😄 SMILE • ' : '';
+                        const labelText = `${smilePrefix}${p.id} • ${p.status} [${photoCountStr}] • ${arStr} (${scaleStr})`;
+                        ctx.font = 'bold 11px Inter, system-ui, sans-serif';
+                        const textMetrics = ctx.measureText(labelText);
+                        const tagW = textMetrics.width + 16;
+                        const tagH = 20;
+                        const tagX = bx;
+                        const tagY = Math.max(offsetY, by - tagH - 4);
+
+                        // Pill background
+                        ctx.fillStyle = 'rgba(15, 23, 42, 0.90)';
+                        ctx.beginPath();
+                        ctx.roundRect(tagX, tagY, tagW, tagH, 6);
+                        ctx.fill();
+
+                        // Pill border
+                        ctx.strokeStyle = strokeColor;
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+
+                        // Pill text
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.fillText(labelText, tagX + 8, tagY + 14);
+
+                        // Reason / Best-of-Worst Quality sub-tag
+                        if (p.reason) {
+                            const subText = p.reason;
+                            ctx.font = '9px Inter, system-ui, sans-serif';
+                            const subMetrics = ctx.measureText(subText);
+                            const subW = subMetrics.width + 12;
+                            const subH = 16;
+                            const subY = tagY + tagH + 2;
+
+                            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+                            ctx.beginPath();
+                            ctx.roundRect(tagX, subY, subW, subH, 4);
+                            ctx.fill();
+
+                            ctx.fillStyle = strokeColor;
+                            ctx.fillText(subText, tagX + 6, subY + 12);
+                        }
+                    });
+                }
+
+                ctx.restore();
+            }
+
+            requestAnimationFrame(drawAiOverlay);
+        }
+
+        // Live Feed + Telemetry
+        function startStream() {
+            stopStream();
+            
+            liveFeed.onerror = function() {
+                if (statusText.innerText.trim().toUpperCase() === 'RUNNING') {
+                    streamRetryTimeout = setTimeout(() => {
+                        liveFeed.src = `/api/stream.mjpg?t=${Date.now()}`;
+                    }, 400);
+                }
+            };
+            liveFeed.src = `/api/stream.mjpg?t=${Date.now()}`;
+
+            renderLoopActive = true;
+            requestAnimationFrame(drawAiOverlay);
+            
+            // 4 FPS telemetry and AI state update
+            stateInterval = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/state');
+                    if (res.ok) {
+                        const state = await res.json();
+                        latestAiState = state;
+                        
+                        const idleVal = typeof state.idle_time === 'number' ? state.idle_time.toFixed(1) : (typeof state.global_idle === 'number' ? state.global_idle.toFixed(1) : '0.0');
+                        const giniVal = typeof state.gini === 'number' ? state.gini.toFixed(2) : '0.00';
+                        document.getElementById('tel-idle').innerText = `Idle: ${idleVal}s`;
+                        document.getElementById('tel-gini').innerText = `Gini: ${giniVal}`;
+                        
+                        const modeEl = document.getElementById('tel-mode');
+                        if (state.equity_mode) {
+                            modeEl.innerText = "EQUITY MODE";
+                            modeEl.className = "text-yellow-600 font-extrabold";
+                        } else if (state.dancing) {
+                            modeEl.innerText = "DANCE BURST";
+                            modeEl.className = "text-blue-600 font-extrabold";
+                        } else {
+                            const curAr = state.aspect_ratio || aspectSelect.value;
+                            const curScale = state.framing_scale || scaleSelect.value;
+                            modeEl.innerText = `${curAr} • ${curScale}`;
+                            modeEl.className = "text-gray-700";
+                        }
+                    }
+                } catch(e) {}
+                
+                refreshBuffer();
+            }, 250);
+        }
+
+        function stopStream() {
+            if (streamRetryTimeout) clearTimeout(streamRetryTimeout);
+            if (stateInterval) clearInterval(stateInterval);
+            renderLoopActive = false;
+            liveFeed.src = '';
+            if (aiCanvas) {
+                const ctx = aiCanvas.getContext('2d');
+                ctx.clearRect(0, 0, aiCanvas.width, aiCanvas.height);
+            }
+        }
+
+        // Capture Buffer Refresh
+        async function refreshBuffer() {
             try {
                 const res = await fetch('/api/buffer');
                 if (res.ok) {
                     const data = await res.json();
-                    const grid = document.getElementById('capture-grid');
+                    const photos = data.photos || data.files || [];
+                    const currentStr = JSON.stringify(photos.map(p => p.filename || p.name));
                     
-                    if (data.photos && data.photos.length > 0) {
-                        grid.innerHTML = '';
-                        data.photos.forEach(photo => {
-                            const div = document.createElement('div');
-                            div.className = 'neo-box relative group bg-gray-100 flex flex-col h-48 overflow-hidden';
-                            
-                            // Delete button (appears on hover)
-                            const delBtn = document.createElement('button');
-                            delBtn.className = 'absolute top-2 right-2 bg-red-500 text-white font-bold p-1 border-2 border-black opacity-0 group-hover:opacity-100 transition-opacity z-10 text-xs';
-                            delBtn.innerHTML = 'Discard';
-                            delBtn.onclick = async () => {
-                                const delRes = await fetch(`/api/photos/${photo.filename}`, { method: 'DELETE' });
-                                if (delRes.ok) fetchBuffer();
-                            };
+                    if (photos.length === 0) {
+                        document.getElementById('capture-grid').innerHTML = `
+                        <div class="text-xs text-gray-400 font-bold uppercase tracking-widest col-span-full text-center py-20 neo-inset-box flex flex-col items-center justify-center">
+                            <i data-lucide="hard-drive" class="w-8 h-8 mb-4 opacity-30"></i>
+                            Buffer Empty
+                        </div>`;
+                        lucide.createIcons();
+                        knownPhotosStr = '';
+                        return;
+                    }
 
-                            const img = document.createElement('img');
-                            img.src = photo.url;
-                            img.className = 'w-full h-full object-cover transition-transform group-hover:scale-105';
-                            
-                            div.appendChild(delBtn);
-                            div.appendChild(img);
+                    if (currentStr !== knownPhotosStr) {
+                        const grid = document.getElementById('capture-grid');
+                        grid.innerHTML = '';
+                        photos.forEach(f => {
+                            const fname = f.filename || f.name;
+                            const furl = f.url || `/buffer/${fname}`;
+                            const div = document.createElement('div');
+                            div.className = "relative group neo-surface rounded-[20px] overflow-hidden animate-enter";
+                            div.innerHTML = `
+                                <img src="${furl}?cb=${Date.now()}" class="w-full h-40 object-cover opacity-90 hover:opacity-100 transition-opacity" />
+                                <div class="absolute bottom-0 w-full bg-white/80 backdrop-blur text-[10px] font-bold p-2 truncate text-gray-800">
+                                    ${fname}
+                                </div>
+                                <button onclick="deletePhoto('${fname}')" class="absolute top-2 right-2 w-8 h-8 rounded-full bg-red-500 text-white shadow-lg opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer hover:scale-110 active:scale-95">
+                                    <svg class="w-4 h-4 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                                </button>
+                            `;
                             grid.appendChild(div);
                         });
-                    } else {
-                        grid.innerHTML = `
-                            <div class="col-span-full neo-box p-2 bg-gray-100 flex flex-col items-center justify-center text-center h-48 border-dashed">
-                                <p class="text-sm font-bold uppercase text-gray-500">Waiting for Auto-Capture...</p>
-                            </div>
-                        `;
+                        knownPhotosStr = currentStr;
                     }
                 }
-            } catch (err) {
-                console.error("Buffer fetch failed", err);
-            }
+            } catch(e) {}
         }
         
-        // Poll every 2 seconds
-        setInterval(fetchBuffer, 2000);
-        fetchBuffer(); // initial fetch
+        if (statusText.innerText.trim().toUpperCase() === 'RUNNING') {
+            startStream();
+        }
+        
+        refreshBuffer();
+
     </script>
 </body>
 </html>

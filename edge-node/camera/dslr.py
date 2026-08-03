@@ -2,24 +2,30 @@ import os
 import time
 import numpy as np
 import cv2
-import gphoto2 as gp
+try:
+    import gphoto2 as gp
+except ImportError:
+    gp = None
 from .base import CameraDriver, CapturedImage
 
 class DSLRDriver(CameraDriver):
     def __init__(self, camera_id: str = "DSLR_01"):
         self.camera_id = camera_id
-        self.camera = gp.Camera()
+        self.camera = gp.Camera() if gp is not None else None
         self.connected = False
         self.buffer_dir = os.environ.get("CAMERA_BUFFER_DIR", "/tmp/capture-buffer")
         os.makedirs(self.buffer_dir, exist_ok=True)
 
     def connect(self) -> bool:
+        if gp is None or self.camera is None:
+            print(f"[DSLR] gphoto2 module is not installed. Cannot connect to DSLR.")
+            return False
         try:
             self.camera.init()
             self.connected = True
             print(f"[DSLR] Connected to {self.camera_id}")
             return True
-        except gp.GPhoto2Error as e:
+        except Exception as e:
             print(f"[DSLR] Connection failed: {e}")
             return False
 
