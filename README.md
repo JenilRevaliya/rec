@@ -147,15 +147,8 @@ The script automatically provisions PostgreSQL, runs the FastAPI backend on Port
 The photographer client requires direct access to system hardware (Webcam) and must be run locally outside of Docker.
 
 ```bash
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# Install heavy machine learning dependencies
-pip install -r requirements.txt
-
-# Launch the Photographer Edge Node
-python web_dashboard.py
+# Automatically sets up venv, installs dependencies, and runs the dashboard
+./edge.sh
 ```
 
 ### Step 3: Default Credentials
