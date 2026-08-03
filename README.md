@@ -69,6 +69,43 @@ The system is split into three distinct operational layers.
 </tr>
 </table>
 
+<br />
+
+### Infrastructure Data Flow
+
+```text
+┌──────────────────────────────────────┐
+│           1. EDGE NODE               │
+│                                      │
+│  [Webcam] -> [OpenCV] -> [Frames]    │
+│                 │                    │
+│                 v                    │
+│  [InsightFace AI] -> [512d Vector]   │
+│                 │                    │
+│                 v                    │
+│      [Background Uploader]           │
+└─────────────────┬────────────────────┘
+                  │ (REST API / Uploads)
+                  v
+┌──────────────────────────────────────┐
+│          2. CLOUD ENGINE             │
+│                                      │
+│  [FastAPI Routes] <-> [Match Engine] │
+│         │                   │        │
+│         v                   v        │
+│    (Static Disk)      (PostgreSQL)   │
+└─────────────────┬────────────────────┘
+                  │ (JSON / Photo URLs)
+                  v
+┌──────────────────────────────────────┐
+│         3. CLIENT PORTALS            │
+│                                      │
+│  [Admin UI]   -> Event Management    │
+│  [Studio UI]  -> LAN QR Generation   │
+│  [Mobile UI]  -> Biometric Retrieval │
+└──────────────────────────────────────┘
+```
+
 ## Operational Workflow
 
 The system follows a strict chronological flow from event creation to photo delivery.
