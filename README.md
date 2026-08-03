@@ -130,3 +130,9 @@ Navigate to `http://localhost:8080` to access the Edge Node login. Use the bypas
 
 * <img src="https://api.iconify.design/lucide:refresh-cw.svg" width="14" height="14" style="vertical-align: middle;" /> **Volume Mounting**: The `docker-compose.yml` mounts the `/portal` directory. Saving any `.tsx` file will trigger an instant Hot Module Reload in the browser.
 * <img src="https://api.iconify.design/lucide:mouse-pointer-click.svg" width="14" height="14" style="vertical-align: middle;" /> **Prefetch Prevention**: The Edge Node uses native JavaScript click handlers instead of standard hyperlink tags to prevent modern browsers from prematurely booting the camera hardware via background prefetching.
+
+<br />
+
+<div align="center">
+  <p>Developed by <a href="https://github.com/JenilRevaliya">Jenil Soni</a></p>
+</div>
